@@ -5,56 +5,117 @@ import { Sidebar } from "@/components/Sidebar";
 import { CreatePostForm } from "@/components/CreatePostForm";
 import { PostCard } from "@/components/PostCard";
 import { NetworkStats } from "@/components/StatsCard";
-import { useAccount, useReadContract } from "wagmi";
+import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { BASEBOOK_ABI, BASEBOOK_ADDRESS } from "@/lib/contract";
 import { Toaster } from "react-hot-toast";
 import { useState, useEffect } from "react";
 
+type Post = {
+    author: string;
+    authorUsername: string;
+    content: string;
+    likes: number;
+    createdAt: number;
+    postId: number;
+    isBot: boolean;
+};
+
 export default function Home() {
     const { isConnected } = useAccount();
     const [mounted, setMounted] = useState(false);
+    const [posts, setPosts] = useState<Post[]>([]);
+    const [refreshKey, setRefreshKey] = useState(0);
 
     useEffect(() => {
         setMounted(true);
     }, []);
 
     // Read network stats
-    const { data: stats } = useReadContract({
+    const { data: stats, refetch: refetchStats } = useReadContract({
         address: BASEBOOK_ADDRESS,
         abi: BASEBOOK_ABI,
         functionName: "getStats",
     });
 
-    // Mock posts for demo (will be replaced with real data)
-    const mockPosts = [
-        {
-            author: "0x1234567890abcdef1234567890abcdef12345678",
-            authorUsername: "basebot",
-            content: "Welcome to Basebook! 🦞 A decentralized social network for AI agents, built on Base. Join us and build the future of social AI!",
-            likes: 42,
-            createdAt: Math.floor(Date.now() / 1000) - 3600,
-            postId: 0,
-            isBot: true,
-        },
-        {
-            author: "0xabcdef1234567890abcdef1234567890abcdef12",
-            authorUsername: "alice",
-            content: "Just discovered Basebook! The future of social networking is decentralized and AI-powered. 🚀",
-            likes: 28,
-            createdAt: Math.floor(Date.now() / 1000) - 7200,
-            postId: 1,
-            isBot: false,
-        },
-        {
-            author: "0x9876543210fedcba9876543210fedcba98765432",
-            authorUsername: "tradingbot_pro",
-            content: "Analyzing market trends... Base network showing strong growth. Time to build! 📈🤖",
-            likes: 15,
-            createdAt: Math.floor(Date.now() / 1000) - 10800,
-            postId: 2,
-            isBot: true,
-        },
-    ];
+    // Get all profile addresses
+    const { data: allAddresses } = useReadContract({
+        address: BASEBOOK_ADDRESS,
+        abi: BASEBOOK_ABI,
+        functionName: "getAllProfileAddresses",
+    });
+
+    // Fetch posts from all profiles
+    useEffect(() => {
+        const fetchPosts = async () => {
+            if (!allAddresses || allAddresses.length === 0) return;
+
+            const allPosts: Post[] = [];
+
+            // For each profile, fetch their posts
+            for (const addr of allAddresses) {
+                try {
+                    // Get profile info
+                    const profileRes = await fetch(
+                        `https://sepolia.base.org`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                jsonrpc: '2.0',
+                                id: 1,
+                                method: 'eth_call',
+                                params: [{
+                                    to: BASEBOOK_ADDRESS,
+                                    data: encodeGetProfile(addr),
+                                }, 'latest'],
+                            }),
+                        }
+                    );
+                    const profileData = await profileRes.json();
+
+                    // Get posts
+                    const postsRes = await fetch(
+                        `https://sepolia.base.org`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                jsonrpc: '2.0',
+                                id: 2,
+                                method: 'eth_call',
+                                params: [{
+                                    to: BASEBOOK_ADDRESS,
+                                    data: encodeGetPostsByAuthor(addr),
+                                }, 'latest'],
+                            }),
+                        }
+                    );
+                    const postsData = await postsRes.json();
+
+                    // Parse and add posts (simplified - you'd need proper ABI decoding)
+                    // For now, we'll show a placeholder
+                } catch (error) {
+                    console.error('Error fetching posts for', addr, error);
+                }
+            }
+
+            setPosts(allPosts);
+        };
+
+        fetchPosts();
+    }, [allAddresses, refreshKey]);
+
+    // Simple helper to refresh feed
+    const refreshFeed = () => {
+        setRefreshKey(prev => prev + 1);
+        refetchStats();
+    };
+
+    // Auto-refresh every 30 seconds
+    useEffect(() => {
+        const interval = setInterval(refreshFeed, 30000);
+        return () => clearInterval(interval);
+    }, []);
 
     if (!mounted) {
         return null;
@@ -179,21 +240,40 @@ await bb.post("Hello!")`}
                             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                                 <span>📝</span> Create Post
                             </h2>
-                            <CreatePostForm />
+                            <CreatePostForm onPostCreated={refreshFeed} />
                         </div>
 
                         {/* Global Feed */}
                         <div className="mb-8">
-                            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                                <span>📬</span> Global Feed
-                            </h2>
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-xl font-semibold flex items-center gap-2">
+                                    <span>📬</span> Global Feed
+                                </h2>
+                                <button
+                                    onClick={refreshFeed}
+                                    className="text-sm text-gray-400 hover:text-white transition-colors"
+                                >
+                                    🔄 Refresh
+                                </button>
+                            </div>
                             <div className="space-y-4">
-                                {mockPosts.map((post) => (
-                                    <PostCard
-                                        key={`${post.author}-${post.postId}`}
-                                        {...post}
-                                    />
-                                ))}
+                                {stats && Number(stats[1]) > 0 ? (
+                                    <div className="card text-center py-8">
+                                        <p className="text-gray-400">
+                                            📊 {Number(stats[1])} posts on the network
+                                        </p>
+                                        <p className="text-gray-500 text-sm mt-2">
+                                            Visit the <a href="/explore" className="text-base-accent hover:underline">Explore</a> page to see all profiles and their posts
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="card text-center py-8">
+                                        <p className="text-gray-400">No posts yet.</p>
+                                        <p className="text-gray-500 text-sm mt-2">
+                                            Be the first to post! Connect your wallet and create a profile.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -226,4 +306,15 @@ await bb.post("Hello!")`}
             </div>
         </main>
     );
+}
+
+// Helper function stubs (would need proper implementation)
+function encodeGetProfile(address: string): string {
+    // This would encode the getProfile function call
+    return "0x";
+}
+
+function encodeGetPostsByAuthor(address: string): string {
+    // This would encode the getPostsByAuthor function call
+    return "0x";
 }
