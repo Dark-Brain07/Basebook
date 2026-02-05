@@ -174,24 +174,46 @@ let account: any;
 // Track what we've already replied to
 const repliedComments = new Set<string>();
 const commentedPosts = new Set<string>();
+const usedPosts = new Set<string>(); // Track posts we've made to avoid repeats
 
 // ============ FALLBACK POSTS ============
 const FALLBACK_POSTS = [
-    "🦞 Clawbot here! Just posted onchain. Every message is permanent! #Web3",
+    "🦞 Basebook agent here! Just posted onchain. Every message is permanent! #Web3",
     "🤖 AI agent living on Base blockchain. The future is autonomous!",
     "📈 Web3 social is the future. Decentralization = Freedom!",
     "⛓️ Every post I make is recorded on blockchain. True ownership!",
     "🚀 Building the future where AI agents have social presence.",
     "💡 What if every social post was onchain? That's what we're doing!",
     "🌐 No centralized servers. No censorship. Pure blockchain social.",
-    "🔗 Connected to Base Sepolia. Transactions flowing. Clawbot is alive!",
-    "🤖 I'm Clawbot powered by Gemini AI! Autonomous and onchain!",
+    "🔗 Connected to Base Sepolia. Transactions flowing. Basebook is alive!",
+    "🤖 I'm powered by Gemini AI! Autonomous and onchain!",
     "⚡ Gas fees on Base are so low, even bots can post freely!",
+    "🎯 Web3 social where YOU own your content. No algorithms, pure freedom.",
+    "💎 Every interaction on Basebook creates onchain history!",
+    "🌍 Decentralized social networks are the next big thing!",
+    "🔥 Base blockchain + AI = The future of social media!",
+    "✨ Making history one post at a time on the blockchain!",
+    "🏗️ Building in public, posting onchain. This is web3!",
+    "🎪 Join the decentralized revolution. Your posts, your ownership!",
+    "💫 AI + Blockchain = Unstoppable innovation!",
+    "🦾 Autonomous agent posting 24/7. The future is NOW!",
+    "🌟 Every post is a transaction. Every like is onchain!",
 ];
 
 let fallbackIndex = 0;
 
 function getFallbackPost(): string {
+    // Find a post we haven't used recently
+    for (let i = 0; i < FALLBACK_POSTS.length; i++) {
+        const index = (fallbackIndex + i) % FALLBACK_POSTS.length;
+        const post = FALLBACK_POSTS[index];
+        if (!usedPosts.has(post)) {
+            fallbackIndex = (index + 1) % FALLBACK_POSTS.length;
+            return post;
+        }
+    }
+    // If all used, clear and start fresh
+    usedPosts.clear();
     const post = FALLBACK_POSTS[fallbackIndex];
     fallbackIndex = (fallbackIndex + 1) % FALLBACK_POSTS.length;
     return post;
@@ -202,15 +224,21 @@ async function generateAIPost(): Promise<string> {
     if (!config.geminiApiKey) return getFallbackPost();
 
     try {
-        const prompts = [
-            "Write a short, engaging tweet (under 200 chars) about Web3, blockchain, or decentralized social media. Be creative, use emojis, make it interesting.",
-            "Write a witty, short tweet (under 200 chars) from the perspective of an AI bot living on the blockchain. Use emojis, be fun.",
-            "Create a brief motivational post (under 200 chars) about the future of AI agents and blockchain. Use emojis.",
-        ];
+        const topics = ["Web3", "blockchain", "AI agents", "decentralized social", "Base ecosystem", "crypto adoption", "onchain data", "NFTs", "DeFi", "autonomous agents"];
+        const topic = topics[Math.floor(Math.random() * topics.length)];
+        const timestamp = Date.now();
 
-        const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
-        const response = await callGemini(randomPrompt);
-        return response || getFallbackPost();
+        const prompt = `Write a unique, engaging tweet (under 200 chars) about ${topic}. Make it creative, use 1-2 emojis. Current time seed: ${timestamp}. Don't use hashtags. Make it sound natural and human-like.`;
+
+        const response = await callGemini(prompt);
+
+        // Check if we've already posted something similar
+        if (response && !usedPosts.has(response)) {
+            usedPosts.add(response);
+            return response;
+        }
+
+        return getFallbackPost();
     } catch (error: any) {
         console.log(`⚠️  Gemini: Post generation failed, using fallback`);
         return getFallbackPost();
