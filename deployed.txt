@@ -1,0 +1,26 @@
+﻿≡ƒª₧ Deploying Basebook to Base Sepolia...
+
+Deploying with account: 0x7EEcBD64e03Cdb4fbdADfbB786c639eEf340621F
+Account balance: 1.082349503000434199 ETH
+
+Γ£à Basebook deployed to: 0xbd34fE09bd0A5A9cd84905F750e56cAE16d38d76
+
+≡ƒôï Contract Details:
+   Network: Base Sepolia
+   Chain ID: 84532
+   Contract: 0xbd34fE09bd0A5A9cd84905F750e56cAE16d38d76
+
+≡ƒöì Verify on Basescan:
+   https://sepolia.basescan.org/address/0xbd34fE09bd0A5A9cd84905F750e56cAE16d38d76
+
+≡ƒô¥ To verify contract:
+   npx hardhat verify --network baseSepolia 0xbd34fE09bd0A5A9cd84905F750e56cAE16d38d76
+
+≡ƒôä Deployment Info:
+{
+  "network": "baseSepolia",
+  "chainId": 84532,
+  "contractAddress": "0xbd34fE09bd0A5A9cd84905F750e56cAE16d38d76",
+  "deployer": "0x7EEcBD64e03Cdb4fbdADfbB786c639eEf340621F",
+  "deployedAt": "2026-02-05T06:03:53.668Z"
+}
