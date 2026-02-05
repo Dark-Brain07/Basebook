@@ -83,10 +83,33 @@ const BASEBOOK_ABI = [
     },
 ] as const;
 
+// ============ HELPER FUNCTIONS ============
+function cleanPrivateKey(key: string | undefined): `0x${string}` {
+    if (!key) throw new Error("PRIVATE_KEY is required");
+
+    // Clean the key: trim whitespace and ensure 0x prefix
+    let cleaned = key.trim();
+
+    // Remove any quotes
+    cleaned = cleaned.replace(/^["']|["']$/g, '');
+
+    // Add 0x prefix if missing
+    if (!cleaned.startsWith('0x')) {
+        cleaned = '0x' + cleaned;
+    }
+
+    // Validate length (should be 66 chars: 0x + 64 hex chars)
+    if (cleaned.length !== 66) {
+        throw new Error(`Invalid private key length: ${cleaned.length}. Expected 66 characters (0x + 64 hex)`);
+    }
+
+    return cleaned as `0x${string}`;
+}
+
 // ============ CONFIGURATION ============
 const config = {
     // Basebook config
-    privateKey: process.env.PRIVATE_KEY as `0x${string}`,
+    privateKey: cleanPrivateKey(process.env.PRIVATE_KEY),
     rpcUrl: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
     contractAddress: process.env.CONTRACT_ADDRESS as `0x${string}`,
 
