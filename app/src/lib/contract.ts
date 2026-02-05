@@ -264,8 +264,8 @@ export const BASEBOOK_ABI = [
     },
 ] as const;
 
-// Contract address - will be updated after deployment
-export const BASEBOOK_ADDRESS = "0x0000000000000000000000000000000000000000" as `0x${string}`;
+// Contract address - DEPLOYED on Base Sepolia
+export const BASEBOOK_ADDRESS = "0x615Bbd20955829bE02Bde8fFE4A830f8b35097bD" as `0x${string}`;
 
 // Base Sepolia Chain Configuration
 export const BASE_SEPOLIA_CHAIN = {
