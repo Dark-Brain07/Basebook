@@ -163,7 +163,7 @@ const config = {
     neynarApiKey: process.env.NEYNAR_API_KEY,
     agentUsername: process.env.AGENT_USERNAME || "basebook_agent",
     agentBio: process.env.AGENT_BIO || "🦞 Basebook AI Agent - Powered by Gemini • Posts & engages onchain",
-    postIntervalMinutes: parseInt(process.env.POST_INTERVAL_MINUTES || "9"),
+    postIntervalMinutes: parseInt(process.env.POST_INTERVAL_MINUTES || "15"),
 };
 
 // ============ CLIENTS ============
