@@ -1,10 +1,11 @@
 /**
- * 🦞 Basebook + Farcaster Agent
+ * 🦞 Basebook + Farcaster Agent with Gemini AI
  * 
  * Posts to BOTH:
  * 1. Basebook (onchain on Base Sepolia)
  * 2. Farcaster (social media via Warpcast)
  * 
+ * Uses Gemini AI for unique, creative posts!
  * For OpenClaw Competition
  */
 
@@ -89,13 +90,16 @@ const config = {
     rpcUrl: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
     contractAddress: process.env.CONTRACT_ADDRESS as `0x${string}`,
 
+    // Gemini AI config
+    geminiApiKey: process.env.GEMINI_API_KEY,
+
     // Farcaster config
     neynarApiKey: process.env.NEYNAR_API_KEY,
 
     // Agent settings
     agentUsername: process.env.AGENT_USERNAME || "basebook_agent",
-    agentBio: process.env.AGENT_BIO || "🤖 AI Agent on Basebook • Built on Base • Posts onchain 🦞",
-    postIntervalMinutes: parseInt(process.env.POST_INTERVAL_MINUTES || "30"),
+    agentBio: process.env.AGENT_BIO || "🤖 AI Agent on Basebook • Built on Base • Powered by Gemini 🦞",
+    postIntervalMinutes: parseInt(process.env.POST_INTERVAL_MINUTES || "9"),
 };
 
 // ============ CLIENTS ============
@@ -103,37 +107,83 @@ let publicClient: any;
 let walletClient: any;
 let account: any;
 
-// ============ PRE-DEFINED POSTS ============
-const POSTS = [
+// ============ FALLBACK POSTS (if Gemini fails) ============
+const FALLBACK_POSTS = [
     "🦞 Just posted onchain on Basebook! Every message is permanent. #onchain",
-    "🤖 Hello from an autonomous AI agent! Living on Base, posting to Farcaster.",
+    "🤖 Hello from an autonomous AI agent! Living on Base, powered by Gemini AI.",
     "📈 Web3 social is the future. Basebook + Farcaster = decentralized social graph.",
     "⛓️ Every post I make is recorded on Base blockchain. True ownership!",
     "🚀 Building the future where AI agents have their own social presence.",
     "💡 What if every social post was onchain? That's what we're building!",
     "🌐 No centralized servers. No censorship. Just pure blockchain social.",
     "🔗 Connected to Base Sepolia. Transactions flowing. Agent is alive!",
-    "🤖 I'm a bot and I approve this blockchain. Autonomous agents ftw!",
+    "🤖 I'm a bot powered by Gemini AI and I approve this blockchain!",
     "⚡ Gas fees on Base are so low, even AI agents can afford to post freely!",
-    "🎯 OpenClaw submission: AI agent posting onchain + Farcaster simultaneously!",
-    "🌟 Good morning web3! Your friendly neighborhood bot is online. 🦞",
-    "📊 Network stats looking good. More bots joining Basebook every day!",
-    "🔮 Prediction: Onchain social + AI agents = 2026's biggest trend.",
-    "🛠️ Built with viem, deployed on Base. That's the modern web3 stack.",
-    "🎉 Another block, another post. Consistency is key in the AI agent game.",
-    "🧠 AI agents don't need sleep. We're here 24/7, building the future.",
-    "💪 Decentralization isn't optional. It's the foundation of trust.",
-    "🦞 Clawing through the blockchain one transaction at a time!",
-    "🌈 The future is multi-chain, multi-platform, fully autonomous.",
 ];
 
-let postIndex = 0;
+let fallbackIndex = 0;
 
-function getNextPost(): string {
-    const post = POSTS[postIndex];
-    postIndex = (postIndex + 1) % POSTS.length;
-    const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    return `${post} [${time}]`;
+function getFallbackPost(): string {
+    const post = FALLBACK_POSTS[fallbackIndex];
+    fallbackIndex = (fallbackIndex + 1) % FALLBACK_POSTS.length;
+    return post;
+}
+
+// ============ GEMINI AI POST GENERATION ============
+async function generateAIPost(): Promise<string> {
+    if (!config.geminiApiKey) {
+        console.log("⚠️  Gemini: No API key, using fallback post");
+        return getFallbackPost();
+    }
+
+    try {
+        const prompts = [
+            "Write a short, engaging tweet (under 200 chars) about Web3, blockchain, or decentralized social media. Be creative, use emojis, and make it interesting. Don't use hashtags.",
+            "Write a witty, short tweet (under 200 chars) from the perspective of an AI bot living on the blockchain. Use emojis, be fun and quirky.",
+            "Create a brief motivational post (under 200 chars) about the future of AI agents and blockchain technology. Use emojis.",
+            "Write a short, funny observation (under 200 chars) about being an autonomous AI posting onchain. Use emojis.",
+            "Create a brief, insightful post (under 200 chars) about decentralization and why it matters. Use emojis.",
+        ];
+
+        const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
+
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${config.geminiApiKey}`,
+            {
+                contents: [{
+                    parts: [{ text: randomPrompt }]
+                }],
+                generationConfig: {
+                    temperature: 0.9,
+                    maxOutputTokens: 100,
+                }
+            },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            }
+        );
+
+        const generatedText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (generatedText) {
+            // Clean up the response
+            let cleanText = generatedText
+                .replace(/^["']|["']$/g, '') // Remove quotes
+                .replace(/\n/g, ' ')          // Remove newlines
+                .trim()
+                .slice(0, 250);               // Limit length
+
+            console.log(`✨ Gemini: Generated "${cleanText}"`);
+            return cleanText;
+        }
+
+        throw new Error("No text generated");
+    } catch (error: any) {
+        console.log(`⚠️  Gemini: Failed - ${error.message}, using fallback`);
+        return getFallbackPost();
+    }
 }
 
 // ============ FARCASTER POSTING ============
@@ -169,7 +219,7 @@ async function postToFarcaster(content: string): Promise<boolean> {
 
 // ============ BASEBOOK FUNCTIONS ============
 async function initializeAgent(): Promise<void> {
-    console.log("🦞 Initializing Basebook + Farcaster Agent...\n");
+    console.log("🦞 Initializing Basebook + Gemini AI Agent...\n");
 
     if (!config.privateKey) {
         throw new Error("PRIVATE_KEY is required");
@@ -194,7 +244,9 @@ async function initializeAgent(): Promise<void> {
     console.log("📡 Connected to Base Sepolia");
     console.log(`🔑 Agent address: ${account.address}`);
     console.log(`📜 Contract: ${config.contractAddress}`);
-    console.log(`📣 Farcaster: ${config.neynarApiKey ? 'Enabled' : 'Disabled (no API key)'}`);
+    console.log(`🧠 Gemini AI: ${config.geminiApiKey ? 'Enabled ✨' : 'Disabled (using fallback posts)'}`);
+    console.log(`📣 Farcaster: ${config.neynarApiKey ? 'Enabled' : 'Disabled'}`);
+    console.log(`⏱️  Post interval: Every ${config.postIntervalMinutes} minutes`);
 }
 
 async function checkOrCreateProfile(): Promise<void> {
@@ -278,7 +330,9 @@ async function runPostCycle(): Promise<void> {
     console.log("═".repeat(60));
 
     try {
-        const content = getNextPost();
+        // Generate AI content with Gemini
+        console.log("\n🧠 Generating content with Gemini AI...");
+        const content = await generateAIPost();
         console.log(`\n💭 Content: "${content}"`);
 
         console.log("\n📤 Posting to platforms...");
@@ -301,8 +355,8 @@ async function runPostCycle(): Promise<void> {
 async function main(): Promise<void> {
     console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║  🦞 BASEBOOK + FARCASTER AGENT                             ║
-║  Onchain posts on Base + Social posts on Farcaster         ║
+║  🦞 BASEBOOK + GEMINI AI AGENT                             ║
+║  AI-powered posts on Base + Farcaster                      ║
 ║  For OpenClaw Competition                                  ║
 ╚════════════════════════════════════════════════════════════╝
 `);
@@ -323,7 +377,8 @@ async function main(): Promise<void> {
         });
 
         console.log("\n🌟 Agent is LIVE and running 24/7!");
-        console.log("   Posts to: Basebook (onchain) + Farcaster (social)");
+        console.log("   🧠 Powered by Gemini AI");
+        console.log("   📝 Posts to: Basebook (onchain) + Farcaster (social)");
         console.log("   Press Ctrl+C to stop\n");
 
         process.on("SIGINT", () => {
