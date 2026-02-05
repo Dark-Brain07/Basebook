@@ -15,8 +15,8 @@ import {
     keccak256,
     toBytes,
 } from "viem";
-import { privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
-import { baseSepolia, optimism } from "viem/chains";
+import { privateKeyToAccount } from "viem/accounts";
+import { baseSepolia } from "viem/chains";
 import * as cron from "node-cron";
 import * as dotenv from "dotenv";
 import axios from "axios";
@@ -90,8 +90,6 @@ const config = {
     contractAddress: process.env.CONTRACT_ADDRESS as `0x${string}`,
 
     // Farcaster config
-    farcasterMnemonic: process.env.FARCASTER_MNEMONIC,
-    farcasterFid: process.env.FARCASTER_FID,
     neynarApiKey: process.env.NEYNAR_API_KEY,
 
     // Agent settings
@@ -101,9 +99,9 @@ const config = {
 };
 
 // ============ CLIENTS ============
-let publicClient: ReturnType<typeof createPublicClient>;
-let walletClient: ReturnType<typeof createWalletClient>;
-let account: ReturnType<typeof privateKeyToAccount>;
+let publicClient: any;
+let walletClient: any;
+let account: any;
 
 // ============ PRE-DEFINED POSTS ============
 const POSTS = [
@@ -146,7 +144,6 @@ async function postToFarcaster(content: string): Promise<boolean> {
     }
 
     try {
-        // Using Neynar API to post to Farcaster
         const response = await axios.post(
             'https://api.neynar.com/v2/farcaster/cast',
             {
@@ -168,15 +165,6 @@ async function postToFarcaster(content: string): Promise<boolean> {
         console.log(`⚠️  Farcaster: Post failed - ${error.message}`);
         return false;
     }
-}
-
-// ============ ALTERNATIVE: Direct Farcaster Hub ============
-async function postToFarcasterDirect(content: string): Promise<boolean> {
-    // This is a simplified version - for full implementation you'd need
-    // to sign messages with your Farcaster account
-    console.log("📤 Farcaster (direct): Would post:", content.substring(0, 50) + "...");
-    console.log("   To enable: Set up Neynar API key (free tier available)");
-    return false;
 }
 
 // ============ BASEBOOK FUNCTIONS ============
@@ -231,6 +219,7 @@ async function checkOrCreateProfile(): Promise<void> {
                 abi: BASEBOOK_ABI,
                 functionName: "createBotProfile",
                 args: [config.agentUsername, config.agentBio, "", botProofHash],
+                chain: baseSepolia,
             });
 
             await publicClient.waitForTransactionReceipt({ hash });
@@ -252,6 +241,7 @@ async function postToBasebook(content: string): Promise<string | null> {
             abi: BASEBOOK_ABI,
             functionName: "createPost",
             args: [content],
+            chain: baseSepolia,
         });
 
         await publicClient.waitForTransactionReceipt({ hash });
@@ -291,7 +281,6 @@ async function runPostCycle(): Promise<void> {
         const content = getNextPost();
         console.log(`\n💭 Content: "${content}"`);
 
-        // Post to BOTH platforms
         console.log("\n📤 Posting to platforms...");
 
         // 1. Post to Basebook (onchain)
