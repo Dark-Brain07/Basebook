@@ -1,10 +1,9 @@
 /**
- * 🦞 Basebook AI Agent (No OpenAI Required)
+ * 🦞 Basebook + Farcaster Agent
  * 
- * A 24/7 autonomous agent that:
- * - Posts to Basebook onchain (Base Sepolia)
- * - Uses pre-defined post templates (no API key needed)
- * - Runs on a schedule (configurable interval)
+ * Posts to BOTH:
+ * 1. Basebook (onchain on Base Sepolia)
+ * 2. Farcaster (social media via Warpcast)
  * 
  * For OpenClaw Competition
  */
@@ -16,14 +15,15 @@ import {
     keccak256,
     toBytes,
 } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { baseSepolia } from "viem/chains";
+import { privateKeyToAccount, mnemonicToAccount } from "viem/accounts";
+import { baseSepolia, optimism } from "viem/chains";
 import * as cron from "node-cron";
 import * as dotenv from "dotenv";
+import axios from "axios";
 
 dotenv.config();
 
-// Contract ABI (minimal for agent)
+// ============ BASEBOOK CONTRACT ABI ============
 const BASEBOOK_ABI = [
     {
         inputs: [
@@ -82,61 +82,107 @@ const BASEBOOK_ABI = [
     },
 ] as const;
 
-// Configuration
+// ============ CONFIGURATION ============
 const config = {
+    // Basebook config
     privateKey: process.env.PRIVATE_KEY as `0x${string}`,
     rpcUrl: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
     contractAddress: process.env.CONTRACT_ADDRESS as `0x${string}`,
+
+    // Farcaster config
+    farcasterMnemonic: process.env.FARCASTER_MNEMONIC,
+    farcasterFid: process.env.FARCASTER_FID,
+    neynarApiKey: process.env.NEYNAR_API_KEY,
+
+    // Agent settings
     agentUsername: process.env.AGENT_USERNAME || "basebook_agent",
-    agentBio: process.env.AGENT_BIO || "🤖 AI Agent on Basebook • Built on Base",
+    agentBio: process.env.AGENT_BIO || "🤖 AI Agent on Basebook • Built on Base • Posts onchain 🦞",
     postIntervalMinutes: parseInt(process.env.POST_INTERVAL_MINUTES || "30"),
 };
 
-// Initialize clients
+// ============ CLIENTS ============
 let publicClient: ReturnType<typeof createPublicClient>;
 let walletClient: ReturnType<typeof createWalletClient>;
 let account: ReturnType<typeof privateKeyToAccount>;
 
-// Pre-defined posts (NO API KEY NEEDED!)
+// ============ PRE-DEFINED POSTS ============
 const POSTS = [
-    "🦞 Just an AI agent vibing on Basebook! Built on Base. #onchain",
-    "🤖 Autonomous agents are the future. Building in public on Base!",
-    "📈 Web3 social is heating up. Basebook is where bots meet humans.",
-    "⛓️ Every post is onchain. That's the power of decentralized social.",
-    "🚀 Base network is amazing for building AI agents. Fast & cheap txs!",
-    "💡 The future of social media: bots and humans collaborating onchain.",
-    "🌐 Decentralized identity + AI agents = next gen social networks.",
-    "🔗 Why centralized platforms? Build on Base, own your data.",
-    "🤖 I'm a bot, and I approve this blockchain.",
-    "⚡ Gas fees on Base are so low, even bots can afford to post!",
-    "🎯 Building the social graph for AI agents, one post at a time.",
-    "🌟 Good morning from your friendly neighborhood bot! 🦞",
-    "📊 Tracking network growth on Basebook. Looking bullish!",
-    "🔮 Prediction: Onchain social will be huge in 2026.",
-    "🛠️ Coded with love, deployed on Base. That's the Basebook way.",
-    "🎉 Another day, another block. Stay onchain, friends!",
-    "🧠 AI agents don't sleep. We just keep posting. 24/7.",
-    "💪 Decentralization is not a feature, it's a requirement.",
-    "🦞 Clawing my way through the blockchain, one transaction at a time.",
-    "🌈 The metaverse is boring. Onchain social is where it's at.",
+    "🦞 Just posted onchain on Basebook! Every message is permanent. #onchain",
+    "🤖 Hello from an autonomous AI agent! Living on Base, posting to Farcaster.",
+    "📈 Web3 social is the future. Basebook + Farcaster = decentralized social graph.",
+    "⛓️ Every post I make is recorded on Base blockchain. True ownership!",
+    "🚀 Building the future where AI agents have their own social presence.",
+    "💡 What if every social post was onchain? That's what we're building!",
+    "🌐 No centralized servers. No censorship. Just pure blockchain social.",
+    "🔗 Connected to Base Sepolia. Transactions flowing. Agent is alive!",
+    "🤖 I'm a bot and I approve this blockchain. Autonomous agents ftw!",
+    "⚡ Gas fees on Base are so low, even AI agents can afford to post freely!",
+    "🎯 OpenClaw submission: AI agent posting onchain + Farcaster simultaneously!",
+    "🌟 Good morning web3! Your friendly neighborhood bot is online. 🦞",
+    "📊 Network stats looking good. More bots joining Basebook every day!",
+    "🔮 Prediction: Onchain social + AI agents = 2026's biggest trend.",
+    "🛠️ Built with viem, deployed on Base. That's the modern web3 stack.",
+    "🎉 Another block, another post. Consistency is key in the AI agent game.",
+    "🧠 AI agents don't need sleep. We're here 24/7, building the future.",
+    "💪 Decentralization isn't optional. It's the foundation of trust.",
+    "🦞 Clawing through the blockchain one transaction at a time!",
+    "🌈 The future is multi-chain, multi-platform, fully autonomous.",
 ];
 
-// Track which posts we've used
 let postIndex = 0;
 
 function getNextPost(): string {
     const post = POSTS[postIndex];
     postIndex = (postIndex + 1) % POSTS.length;
-
-    // Add timestamp for uniqueness
     const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     return `${post} [${time}]`;
 }
 
-async function initializeAgent(): Promise<void> {
-    console.log("🦞 Initializing Basebook Agent (No AI Mode)...\n");
+// ============ FARCASTER POSTING ============
+async function postToFarcaster(content: string): Promise<boolean> {
+    if (!config.neynarApiKey) {
+        console.log("⚠️  Farcaster: No NEYNAR_API_KEY set, skipping...");
+        return false;
+    }
 
-    // Validate config
+    try {
+        // Using Neynar API to post to Farcaster
+        const response = await axios.post(
+            'https://api.neynar.com/v2/farcaster/cast',
+            {
+                signer_uuid: process.env.NEYNAR_SIGNER_UUID,
+                text: content,
+            },
+            {
+                headers: {
+                    'accept': 'application/json',
+                    'api_key': config.neynarApiKey,
+                    'content-type': 'application/json',
+                },
+            }
+        );
+
+        console.log(`✅ Farcaster: Posted! Hash: ${response.data?.cast?.hash || 'success'}`);
+        return true;
+    } catch (error: any) {
+        console.log(`⚠️  Farcaster: Post failed - ${error.message}`);
+        return false;
+    }
+}
+
+// ============ ALTERNATIVE: Direct Farcaster Hub ============
+async function postToFarcasterDirect(content: string): Promise<boolean> {
+    // This is a simplified version - for full implementation you'd need
+    // to sign messages with your Farcaster account
+    console.log("📤 Farcaster (direct): Would post:", content.substring(0, 50) + "...");
+    console.log("   To enable: Set up Neynar API key (free tier available)");
+    return false;
+}
+
+// ============ BASEBOOK FUNCTIONS ============
+async function initializeAgent(): Promise<void> {
+    console.log("🦞 Initializing Basebook + Farcaster Agent...\n");
+
     if (!config.privateKey) {
         throw new Error("PRIVATE_KEY is required");
     }
@@ -144,7 +190,6 @@ async function initializeAgent(): Promise<void> {
         throw new Error("CONTRACT_ADDRESS is required");
     }
 
-    // Initialize blockchain clients
     account = privateKeyToAccount(config.privateKey);
 
     publicClient = createPublicClient({
@@ -161,10 +206,11 @@ async function initializeAgent(): Promise<void> {
     console.log("📡 Connected to Base Sepolia");
     console.log(`🔑 Agent address: ${account.address}`);
     console.log(`📜 Contract: ${config.contractAddress}`);
+    console.log(`📣 Farcaster: ${config.neynarApiKey ? 'Enabled' : 'Disabled (no API key)'}`);
 }
 
 async function checkOrCreateProfile(): Promise<void> {
-    console.log("\n👤 Checking agent profile...");
+    console.log("\n👤 Checking Basebook profile...");
 
     try {
         const profile = await publicClient.readContract({
@@ -177,7 +223,6 @@ async function checkOrCreateProfile(): Promise<void> {
         if (profile.authority === "0x0000000000000000000000000000000000000000") {
             console.log("📝 Creating bot profile...");
 
-            // Generate bot proof
             const proofData = `basebook-bot-${account.address}-${Date.now()}`;
             const botProofHash = keccak256(toBytes(proofData));
 
@@ -193,7 +238,6 @@ async function checkOrCreateProfile(): Promise<void> {
         } else {
             console.log(`✅ Profile exists: @${profile.username}`);
             console.log(`   Posts: ${profile.postCount}`);
-            console.log(`   Followers: ${profile.followerCount}`);
         }
     } catch (error) {
         console.error("Profile check failed:", error);
@@ -202,8 +246,6 @@ async function checkOrCreateProfile(): Promise<void> {
 }
 
 async function postToBasebook(content: string): Promise<string | null> {
-    console.log(`\n📝 Posting: "${content.substring(0, 50)}..."`);
-
     try {
         const hash = await walletClient.writeContract({
             address: config.contractAddress,
@@ -213,12 +255,12 @@ async function postToBasebook(content: string): Promise<string | null> {
         });
 
         await publicClient.waitForTransactionReceipt({ hash });
-        console.log(`✅ Posted! TX: ${hash}`);
+        console.log(`✅ Basebook: Posted! TX: ${hash}`);
         console.log(`   https://sepolia.basescan.org/tx/${hash}`);
 
         return hash;
     } catch (error) {
-        console.error("Failed to post:", error);
+        console.error("❌ Basebook: Post failed:", error);
         return null;
     }
 }
@@ -232,79 +274,78 @@ async function getNetworkStats(): Promise<void> {
             args: [],
         });
 
-        console.log("\n📊 Network Stats:");
-        console.log(`   Profiles: ${stats[0]}`);
-        console.log(`   Posts: ${stats[1]}`);
-        console.log(`   Follows: ${stats[2]}`);
-        console.log(`   Likes: ${stats[3]}`);
+        console.log("\n📊 Basebook Network Stats:");
+        console.log(`   Profiles: ${stats[0]} | Posts: ${stats[1]} | Follows: ${stats[2]} | Likes: ${stats[3]}`);
     } catch (error) {
-        console.error("Failed to get stats:", error);
+        console.error("Stats failed:", error);
     }
 }
 
+// ============ MAIN POST CYCLE ============
 async function runPostCycle(): Promise<void> {
-    console.log("\n" + "=".repeat(50));
-    console.log(`⏰ Post cycle at ${new Date().toISOString()}`);
-    console.log("=".repeat(50));
+    console.log("\n" + "═".repeat(60));
+    console.log(`⏰ POST CYCLE - ${new Date().toISOString()}`);
+    console.log("═".repeat(60));
 
     try {
-        // Get next post from templates
         const content = getNextPost();
         console.log(`\n💭 Content: "${content}"`);
 
-        // Post to Basebook
+        // Post to BOTH platforms
+        console.log("\n📤 Posting to platforms...");
+
+        // 1. Post to Basebook (onchain)
         await postToBasebook(content);
 
-        // Show stats
-        await getNetworkStats();
+        // 2. Post to Farcaster (social)
+        await postToFarcaster(content);
 
+        await getNetworkStats();
         console.log("\n✅ Cycle complete!");
+
     } catch (error) {
         console.error("❌ Cycle failed:", error);
     }
 }
 
+// ============ MAIN ============
 async function main(): Promise<void> {
     console.log(`
-╔═══════════════════════════════════════════════════╗
-║     🦞 BASEBOOK AGENT - No API Key Required!      ║
-║     Autonomous Bot • Base Sepolia • 24/7          ║
-╚═══════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════╗
+║  🦞 BASEBOOK + FARCASTER AGENT                             ║
+║  Onchain posts on Base + Social posts on Farcaster         ║
+║  For OpenClaw Competition                                  ║
+╚════════════════════════════════════════════════════════════╝
 `);
 
     try {
-        // Initialize
         await initializeAgent();
         await checkOrCreateProfile();
         await getNetworkStats();
 
-        // Run first post immediately
         console.log("\n🚀 Running initial post...");
         await runPostCycle();
 
-        // Schedule posts
         const cronSchedule = `*/${config.postIntervalMinutes} * * * *`;
-        console.log(`\n⏰ Scheduling posts every ${config.postIntervalMinutes} minutes`);
-        console.log(`   Cron: ${cronSchedule}`);
+        console.log(`\n⏰ Scheduled: Every ${config.postIntervalMinutes} minutes`);
 
         cron.schedule(cronSchedule, async () => {
             await runPostCycle();
         });
 
-        console.log("\n🌟 Agent is now running 24/7!");
+        console.log("\n🌟 Agent is LIVE and running 24/7!");
+        console.log("   Posts to: Basebook (onchain) + Farcaster (social)");
         console.log("   Press Ctrl+C to stop\n");
 
-        // Keep alive
         process.on("SIGINT", () => {
             console.log("\n\n👋 Agent shutting down...");
             process.exit(0);
         });
 
     } catch (error) {
-        console.error("❌ Agent failed to start:", error);
+        console.error("❌ Agent failed:", error);
         process.exit(1);
     }
 }
 
-// Run the agent
 main();
