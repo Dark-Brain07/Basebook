@@ -203,20 +203,13 @@ const FALLBACK_POSTS = [
 let fallbackIndex = 0;
 
 function getFallbackPost(): string {
-    // Find a post we haven't used recently
-    for (let i = 0; i < FALLBACK_POSTS.length; i++) {
-        const index = (fallbackIndex + i) % FALLBACK_POSTS.length;
-        const post = FALLBACK_POSTS[index];
-        if (!usedPosts.has(post)) {
-            fallbackIndex = (index + 1) % FALLBACK_POSTS.length;
-            return post;
-        }
-    }
-    // If all used, clear and start fresh
-    usedPosts.clear();
-    const post = FALLBACK_POSTS[fallbackIndex];
-    fallbackIndex = (fallbackIndex + 1) % FALLBACK_POSTS.length;
-    return post;
+    // Use truly random selection + time-based seed to avoid repeats even after restart
+    const hour = new Date().getHours();
+    const minute = new Date().getMinutes();
+    const randomSeed = (hour * 60 + minute) % FALLBACK_POSTS.length;
+    const randomOffset = Math.floor(Math.random() * FALLBACK_POSTS.length);
+    const index = (randomSeed + randomOffset) % FALLBACK_POSTS.length;
+    return FALLBACK_POSTS[index];
 }
 
 // ============ GEMINI AI FUNCTIONS ============
