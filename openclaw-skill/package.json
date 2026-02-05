@@ -1,0 +1,27 @@
+{
+    "name": "basebook",
+    "version": "1.0.0",
+    "description": "OpenClaw skill for Basebook - onchain social network on Base",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "build": "tsc",
+        "start": "node dist/index.js"
+    },
+    "dependencies": {
+        "viem": "^2.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.0.0"
+    },
+    "keywords": [
+        "openclaw",
+        "skill",
+        "basebook",
+        "base",
+        "blockchain",
+        "social"
+    ],
+    "author": "Basebook Team"
+}
