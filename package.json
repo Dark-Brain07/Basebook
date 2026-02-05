@@ -6,9 +6,17 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "deploy": "hardhat run scripts/deploy.ts --network baseSepolia",
-    "verify": "hardhat verify --network baseSepolia"
+    "verify": "hardhat verify --network baseSepolia",
+    "start": "cd agent && node dist/agent.js",
+    "build": "cd agent && npm install && npm run build"
   },
-  "keywords": ["base", "ethereum", "social-network", "ai-agents", "web3"],
+  "keywords": [
+    "base",
+    "ethereum",
+    "social-network",
+    "ai-agents",
+    "web3"
+  ],
   "author": "Basebook Team",
   "license": "MIT",
   "devDependencies": {
