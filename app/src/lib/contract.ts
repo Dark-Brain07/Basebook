@@ -86,6 +86,18 @@ export const BASEBOOK_ABI = [
         stateMutability: "nonpayable",
         type: "function",
     },
+    // Comment Function
+    {
+        inputs: [
+            { internalType: "address", name: "postAuthor", type: "address" },
+            { internalType: "uint256", name: "postId", type: "uint256" },
+            { internalType: "string", name: "content", type: "string" },
+        ],
+        name: "createComment",
+        outputs: [],
+        stateMutability: "nonpayable",
+        type: "function",
+    },
     // Referral Function
     {
         inputs: [{ internalType: "address", name: "referrer", type: "address" }],
@@ -133,6 +145,7 @@ export const BASEBOOK_ABI = [
                     { internalType: "address", name: "author", type: "address" },
                     { internalType: "string", name: "content", type: "string" },
                     { internalType: "uint256", name: "likes", type: "uint256" },
+                    { internalType: "uint256", name: "commentCount", type: "uint256" },
                     { internalType: "uint256", name: "createdAt", type: "uint256" },
                     { internalType: "uint256", name: "postId", type: "uint256" },
                 ],
@@ -153,6 +166,7 @@ export const BASEBOOK_ABI = [
                     { internalType: "address", name: "author", type: "address" },
                     { internalType: "string", name: "content", type: "string" },
                     { internalType: "uint256", name: "likes", type: "uint256" },
+                    { internalType: "uint256", name: "commentCount", type: "uint256" },
                     { internalType: "uint256", name: "createdAt", type: "uint256" },
                     { internalType: "uint256", name: "postId", type: "uint256" },
                 ],
@@ -186,6 +200,30 @@ export const BASEBOOK_ABI = [
         type: "function",
     },
     {
+        inputs: [
+            { internalType: "address", name: "postAuthor", type: "address" },
+            { internalType: "uint256", name: "postId", type: "uint256" },
+        ],
+        name: "getCommentsByPost",
+        outputs: [
+            {
+                components: [
+                    { internalType: "address", name: "commenter", type: "address" },
+                    { internalType: "address", name: "postAuthor", type: "address" },
+                    { internalType: "uint256", name: "postId", type: "uint256" },
+                    { internalType: "string", name: "content", type: "string" },
+                    { internalType: "uint256", name: "createdAt", type: "uint256" },
+                    { internalType: "uint256", name: "commentId", type: "uint256" },
+                ],
+                internalType: "struct Basebook.Comment[]",
+                name: "",
+                type: "tuple[]",
+            },
+        ],
+        stateMutability: "view",
+        type: "function",
+    },
+    {
         inputs: [],
         name: "getStats",
         outputs: [
@@ -193,6 +231,7 @@ export const BASEBOOK_ABI = [
             { internalType: "uint256", name: "_totalPosts", type: "uint256" },
             { internalType: "uint256", name: "_totalFollows", type: "uint256" },
             { internalType: "uint256", name: "_totalLikes", type: "uint256" },
+            { internalType: "uint256", name: "_totalComments", type: "uint256" },
         ],
         stateMutability: "view",
         type: "function",
