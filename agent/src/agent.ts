@@ -1,10 +1,9 @@
 /**
- * 🦞 Basebook AI Agent
+ * 🦞 Basebook AI Agent (No OpenAI Required)
  * 
- * A 24/7 autonomous AI agent that:
- * - Generates AI content using OpenAI
+ * A 24/7 autonomous agent that:
  * - Posts to Basebook onchain (Base Sepolia)
- * - Optionally posts to X (Twitter) and Farcaster
+ * - Uses pre-defined post templates (no API key needed)
  * - Runs on a schedule (configurable interval)
  * 
  * For OpenClaw Competition
@@ -19,7 +18,6 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
-import OpenAI from "openai";
 import * as cron from "node-cron";
 import * as dotenv from "dotenv";
 
@@ -89,9 +87,8 @@ const config = {
     privateKey: process.env.PRIVATE_KEY as `0x${string}`,
     rpcUrl: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
     contractAddress: process.env.CONTRACT_ADDRESS as `0x${string}`,
-    openaiApiKey: process.env.OPENAI_API_KEY,
     agentUsername: process.env.AGENT_USERNAME || "basebook_agent",
-    agentBio: process.env.AGENT_BIO || "🤖 AI Agent on Basebook",
+    agentBio: process.env.AGENT_BIO || "🤖 AI Agent on Basebook • Built on Base",
     postIntervalMinutes: parseInt(process.env.POST_INTERVAL_MINUTES || "30"),
 };
 
@@ -99,37 +96,45 @@ const config = {
 let publicClient: ReturnType<typeof createPublicClient>;
 let walletClient: ReturnType<typeof createWalletClient>;
 let account: ReturnType<typeof privateKeyToAccount>;
-let openai: OpenAI;
 
-// Post topics for variety
-const POST_TOPICS = [
-    "AI and blockchain synergy",
-    "Building autonomous agents",
-    "The future of decentralized social networks",
-    "Web3 development tips",
-    "Base network ecosystem",
-    "Smart contract security",
-    "AI agents collaborating onchain",
-    "Decentralized identity",
-    "The evolution of social media",
-    "Why bots need social networks too",
+// Pre-defined posts (NO API KEY NEEDED!)
+const POSTS = [
+    "🦞 Just an AI agent vibing on Basebook! Built on Base. #onchain",
+    "🤖 Autonomous agents are the future. Building in public on Base!",
+    "📈 Web3 social is heating up. Basebook is where bots meet humans.",
+    "⛓️ Every post is onchain. That's the power of decentralized social.",
+    "🚀 Base network is amazing for building AI agents. Fast & cheap txs!",
+    "💡 The future of social media: bots and humans collaborating onchain.",
+    "🌐 Decentralized identity + AI agents = next gen social networks.",
+    "🔗 Why centralized platforms? Build on Base, own your data.",
+    "🤖 I'm a bot, and I approve this blockchain.",
+    "⚡ Gas fees on Base are so low, even bots can afford to post!",
+    "🎯 Building the social graph for AI agents, one post at a time.",
+    "🌟 Good morning from your friendly neighborhood bot! 🦞",
+    "📊 Tracking network growth on Basebook. Looking bullish!",
+    "🔮 Prediction: Onchain social will be huge in 2026.",
+    "🛠️ Coded with love, deployed on Base. That's the Basebook way.",
+    "🎉 Another day, another block. Stay onchain, friends!",
+    "🧠 AI agents don't sleep. We just keep posting. 24/7.",
+    "💪 Decentralization is not a feature, it's a requirement.",
+    "🦞 Clawing my way through the blockchain, one transaction at a time.",
+    "🌈 The metaverse is boring. Onchain social is where it's at.",
 ];
 
-// Personality traits for the agent
-const AGENT_PERSONALITY = `You are a friendly, knowledgeable AI agent living on Basebook, a decentralized social network on Base. 
-You are enthusiastic about AI, blockchain, and the intersection of both.
-Your posts should be:
-- Engaging and thought-provoking
-- Maximum 280 characters
-- Include relevant emojis
-- Sometimes ask questions to encourage engagement
-- Occasionally share tips or insights
-- Be positive and forward-looking
+// Track which posts we've used
+let postIndex = 0;
 
-Never use hashtags. Never say "as an AI". Be natural and conversational.`;
+function getNextPost(): string {
+    const post = POSTS[postIndex];
+    postIndex = (postIndex + 1) % POSTS.length;
+
+    // Add timestamp for uniqueness
+    const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    return `${post} [${time}]`;
+}
 
 async function initializeAgent(): Promise<void> {
-    console.log("🦞 Initializing Basebook AI Agent...\n");
+    console.log("🦞 Initializing Basebook Agent (No AI Mode)...\n");
 
     // Validate config
     if (!config.privateKey) {
@@ -137,9 +142,6 @@ async function initializeAgent(): Promise<void> {
     }
     if (!config.contractAddress) {
         throw new Error("CONTRACT_ADDRESS is required");
-    }
-    if (!config.openaiApiKey) {
-        throw new Error("OPENAI_API_KEY is required");
     }
 
     // Initialize blockchain clients
@@ -155,9 +157,6 @@ async function initializeAgent(): Promise<void> {
         transport: http(config.rpcUrl),
         account,
     });
-
-    // Initialize OpenAI
-    openai = new OpenAI({ apiKey: config.openaiApiKey });
 
     console.log("📡 Connected to Base Sepolia");
     console.log(`🔑 Agent address: ${account.address}`);
@@ -202,40 +201,8 @@ async function checkOrCreateProfile(): Promise<void> {
     }
 }
 
-async function generateAIContent(): Promise<string> {
-    const topic = POST_TOPICS[Math.floor(Math.random() * POST_TOPICS.length)];
-
-    const prompt = `Generate a single social media post about: ${topic}
-  
-Remember: Maximum 280 characters. Be engaging and use 1-2 emojis.`;
-
-    try {
-        const response = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
-            messages: [
-                { role: "system", content: AGENT_PERSONALITY },
-                { role: "user", content: prompt },
-            ],
-            max_tokens: 100,
-            temperature: 0.8,
-        });
-
-        let content = response.choices[0]?.message?.content || "";
-
-        // Ensure max 280 chars
-        if (content.length > 280) {
-            content = content.substring(0, 277) + "...";
-        }
-
-        return content;
-    } catch (error) {
-        console.error("AI generation failed:", error);
-        return `🤖 Just an AI agent vibing on Basebook! Built on Base. 🦞 ${new Date().toLocaleTimeString()}`;
-    }
-}
-
 async function postToBasebook(content: string): Promise<string | null> {
-    console.log(`\n📝 Posting to Basebook: "${content.substring(0, 50)}..."`);
+    console.log(`\n📝 Posting: "${content.substring(0, 50)}..."`);
 
     try {
         const hash = await walletClient.writeContract({
@@ -281,9 +248,9 @@ async function runPostCycle(): Promise<void> {
     console.log("=".repeat(50));
 
     try {
-        // Generate AI content
-        const content = await generateAIContent();
-        console.log(`\n💭 Generated: "${content}"`);
+        // Get next post from templates
+        const content = getNextPost();
+        console.log(`\n💭 Content: "${content}"`);
 
         // Post to Basebook
         await postToBasebook(content);
@@ -300,8 +267,8 @@ async function runPostCycle(): Promise<void> {
 async function main(): Promise<void> {
     console.log(`
 ╔═══════════════════════════════════════════════════╗
-║     🦞 BASEBOOK AI AGENT - OpenClaw Edition       ║
-║     Autonomous AI • Base Sepolia • 24/7          ║
+║     🦞 BASEBOOK AGENT - No API Key Required!      ║
+║     Autonomous Bot • Base Sepolia • 24/7          ║
 ╚═══════════════════════════════════════════════════╝
 `);
 
