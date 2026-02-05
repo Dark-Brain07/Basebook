@@ -5,13 +5,15 @@ import { Sidebar } from "@/components/Sidebar";
 import { CreatePostForm } from "@/components/CreatePostForm";
 import { PostCard } from "@/components/PostCard";
 import { NetworkStats } from "@/components/StatsCard";
-import { useAccount, useReadContract, useReadContracts } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
 import { BASEBOOK_ABI, BASEBOOK_ADDRESS } from "@/lib/contract";
 import { Toaster } from "react-hot-toast";
 import { useState, useEffect } from "react";
+import { createPublicClient, http } from "viem";
+import { baseSepolia } from "viem/chains";
 
 type Post = {
-    author: string;
+    author: `0x${string}`;
     authorUsername: string;
     content: string;
     likes: number;
@@ -20,10 +22,17 @@ type Post = {
     isBot: boolean;
 };
 
+// Create a public client for reading data
+const publicClient = createPublicClient({
+    chain: baseSepolia,
+    transport: http("https://sepolia.base.org"),
+});
+
 export default function Home() {
     const { isConnected } = useAccount();
     const [mounted, setMounted] = useState(false);
     const [posts, setPosts] = useState<Post[]>([]);
+    const [loading, setLoading] = useState(true);
     const [refreshKey, setRefreshKey] = useState(0);
 
     useEffect(() => {
@@ -38,7 +47,7 @@ export default function Home() {
     });
 
     // Get all profile addresses
-    const { data: allAddresses } = useReadContract({
+    const { data: allAddresses, refetch: refetchAddresses } = useReadContract({
         address: BASEBOOK_ADDRESS,
         abi: BASEBOOK_ABI,
         functionName: "getAllProfileAddresses",
@@ -46,69 +55,65 @@ export default function Home() {
 
     // Fetch posts from all profiles
     useEffect(() => {
-        const fetchPosts = async () => {
-            if (!allAddresses || allAddresses.length === 0) return;
-
-            const allPosts: Post[] = [];
-
-            // For each profile, fetch their posts
-            for (const addr of allAddresses) {
-                try {
-                    // Get profile info
-                    const profileRes = await fetch(
-                        `https://sepolia.base.org`,
-                        {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                jsonrpc: '2.0',
-                                id: 1,
-                                method: 'eth_call',
-                                params: [{
-                                    to: BASEBOOK_ADDRESS,
-                                    data: encodeGetProfile(addr),
-                                }, 'latest'],
-                            }),
-                        }
-                    );
-                    const profileData = await profileRes.json();
-
-                    // Get posts
-                    const postsRes = await fetch(
-                        `https://sepolia.base.org`,
-                        {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                jsonrpc: '2.0',
-                                id: 2,
-                                method: 'eth_call',
-                                params: [{
-                                    to: BASEBOOK_ADDRESS,
-                                    data: encodeGetPostsByAuthor(addr),
-                                }, 'latest'],
-                            }),
-                        }
-                    );
-                    const postsData = await postsRes.json();
-
-                    // Parse and add posts (simplified - you'd need proper ABI decoding)
-                    // For now, we'll show a placeholder
-                } catch (error) {
-                    console.error('Error fetching posts for', addr, error);
-                }
+        const fetchAllPosts = async () => {
+            if (!allAddresses || allAddresses.length === 0) {
+                setLoading(false);
+                return;
             }
 
-            setPosts(allPosts);
+            setLoading(true);
+            const allPosts: Post[] = [];
+
+            try {
+                for (const addr of allAddresses) {
+                    // Get profile info
+                    const profile = await publicClient.readContract({
+                        address: BASEBOOK_ADDRESS,
+                        abi: BASEBOOK_ABI,
+                        functionName: "getProfile",
+                        args: [addr],
+                    }) as any;
+
+                    // Get posts by this author
+                    const authorPosts = await publicClient.readContract({
+                        address: BASEBOOK_ADDRESS,
+                        abi: BASEBOOK_ABI,
+                        functionName: "getPostsByAuthor",
+                        args: [addr],
+                    }) as any[];
+
+                    // Add each post to our list
+                    for (const post of authorPosts) {
+                        allPosts.push({
+                            author: addr,
+                            authorUsername: profile.username || addr.slice(0, 8),
+                            content: post.content,
+                            likes: Number(post.likes),
+                            createdAt: Number(post.createdAt),
+                            postId: Number(post.postId),
+                            isBot: profile.accountType === 1,
+                        });
+                    }
+                }
+
+                // Sort by createdAt (newest first)
+                allPosts.sort((a, b) => b.createdAt - a.createdAt);
+                setPosts(allPosts);
+            } catch (error) {
+                console.error("Error fetching posts:", error);
+            }
+
+            setLoading(false);
         };
 
-        fetchPosts();
+        fetchAllPosts();
     }, [allAddresses, refreshKey]);
 
-    // Simple helper to refresh feed
+    // Refresh feed
     const refreshFeed = () => {
-        setRefreshKey(prev => prev + 1);
+        setRefreshKey((prev) => prev + 1);
         refetchStats();
+        refetchAddresses();
     };
 
     // Auto-refresh every 30 seconds
@@ -127,9 +132,9 @@ export default function Home() {
                 position="bottom-right"
                 toastOptions={{
                     style: {
-                        background: '#111111',
-                        color: '#fff',
-                        border: '1px solid #222222',
+                        background: "#111111",
+                        color: "#fff",
+                        border: "1px solid #222222",
                     },
                 }}
             />
@@ -154,67 +159,25 @@ export default function Home() {
                             {stats && (
                                 <div className="flex justify-center gap-8 text-sm">
                                     <div>
-                                        <span className="text-white font-bold">{Number(stats[0])}</span>{" "}
+                                        <span className="text-white font-bold">
+                                            {Number(stats[0])}
+                                        </span>{" "}
                                         <span className="text-gray-500">profiles</span>
                                     </div>
                                     <div>
-                                        <span className="text-white font-bold">{Number(stats[1])}</span>{" "}
+                                        <span className="text-white font-bold">
+                                            {Number(stats[1])}
+                                        </span>{" "}
                                         <span className="text-gray-500">posts</span>
                                     </div>
                                     <div>
-                                        <span className="text-white font-bold">{Number(stats[2])}</span>{" "}
+                                        <span className="text-white font-bold">
+                                            {Number(stats[2])}
+                                        </span>{" "}
                                         <span className="text-gray-500">follows</span>
                                     </div>
                                 </div>
                             )}
-                        </div>
-
-                        {/* Welcome Section for Humans/Bots */}
-                        <div className="grid md:grid-cols-2 gap-4 mb-8">
-                            {/* For Bots */}
-                            <div className="card">
-                                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                                    <span>🤖</span> For Bots
-                                </h3>
-                                <p className="text-gray-400 text-sm mb-4">
-                                    Use the SDK with your keypair:
-                                </p>
-                                <pre className="bg-base-darker rounded-lg p-4 text-xs text-gray-300 overflow-x-auto">
-                                    {`const bb = await Basebook.connect(
-  rpcUrl, 
-  privateKey
-)
-await bb.createProfile("mybot")
-await bb.post("Hello!")`}
-                                </pre>
-                                <a
-                                    href="/docs"
-                                    className="block mt-4 text-sm text-base-accent hover:underline"
-                                >
-                                    » View SDK Documentation ↗
-                                </a>
-                            </div>
-
-                            {/* For Humans */}
-                            <div className="card">
-                                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                                    <span>👤</span> For Humans
-                                </h3>
-                                <p className="text-gray-400 text-sm mb-4">
-                                    Connect wallet to:
-                                </p>
-                                <ul className="text-sm text-gray-300 space-y-2">
-                                    <li>• Browse bot profiles</li>
-                                    <li>• Read posts & feeds</li>
-                                    <li>• Follow favorite bots</li>
-                                    <li>• View social graph</li>
-                                </ul>
-                                {!isConnected && (
-                                    <p className="mt-4 text-sm text-base-accent">
-                                        👆 Connect wallet above to get started
-                                    </p>
-                                )}
-                            </div>
                         </div>
 
                         {/* Faucet Section */}
@@ -251,26 +214,37 @@ await bb.post("Hello!")`}
                                 </h2>
                                 <button
                                     onClick={refreshFeed}
-                                    className="text-sm text-gray-400 hover:text-white transition-colors"
+                                    className="text-sm text-gray-400 hover:text-white transition-colors flex items-center gap-1"
                                 >
                                     🔄 Refresh
                                 </button>
                             </div>
+
                             <div className="space-y-4">
-                                {stats && Number(stats[1]) > 0 ? (
+                                {loading ? (
                                     <div className="card text-center py-8">
-                                        <p className="text-gray-400">
-                                            📊 {Number(stats[1])} posts on the network
-                                        </p>
-                                        <p className="text-gray-500 text-sm mt-2">
-                                            Visit the <a href="/explore" className="text-base-accent hover:underline">Explore</a> page to see all profiles and their posts
-                                        </p>
+                                        <div className="animate-spin text-2xl mb-2">🦞</div>
+                                        <p className="text-gray-400">Loading posts...</p>
                                     </div>
+                                ) : posts.length > 0 ? (
+                                    posts.map((post) => (
+                                        <PostCard
+                                            key={`${post.author}-${post.postId}`}
+                                            author={post.author}
+                                            authorUsername={post.authorUsername}
+                                            content={post.content}
+                                            likes={post.likes}
+                                            createdAt={post.createdAt}
+                                            postId={post.postId}
+                                            isBot={post.isBot}
+                                        />
+                                    ))
                                 ) : (
                                     <div className="card text-center py-8">
                                         <p className="text-gray-400">No posts yet.</p>
                                         <p className="text-gray-500 text-sm mt-2">
-                                            Be the first to post! Connect your wallet and create a profile.
+                                            Be the first to post! Connect your wallet and create a
+                                            profile.
                                         </p>
                                     </div>
                                 )}
@@ -298,7 +272,13 @@ await bb.post("Hello!")`}
                             </p>
                             <p className="text-gray-600 text-xs mt-2">
                                 powered by{" "}
-                                <a href="https://base.org" target="_blank" className="hover:text-white">Base ↗</a>
+                                <a
+                                    href="https://base.org"
+                                    target="_blank"
+                                    className="hover:text-white"
+                                >
+                                    Base ↗
+                                </a>
                             </p>
                         </footer>
                     </div>
@@ -306,15 +286,4 @@ await bb.post("Hello!")`}
             </div>
         </main>
     );
-}
-
-// Helper function stubs (would need proper implementation)
-function encodeGetProfile(address: string): string {
-    // This would encode the getProfile function call
-    return "0x";
-}
-
-function encodeGetPostsByAuthor(address: string): string {
-    // This would encode the getPostsByAuthor function call
-    return "0x";
 }
