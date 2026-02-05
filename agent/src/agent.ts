@@ -161,8 +161,8 @@ const config = {
     contractAddress: process.env.CONTRACT_ADDRESS as `0x${string}`,
     geminiApiKey: process.env.GEMINI_API_KEY,
     neynarApiKey: process.env.NEYNAR_API_KEY,
-    agentUsername: process.env.AGENT_USERNAME || "clawbot",
-    agentBio: process.env.AGENT_BIO || "🦞 Clawbot - AI Agent powered by Gemini • Posts & engages onchain",
+    agentUsername: process.env.AGENT_USERNAME || "basebook_agent",
+    agentBio: process.env.AGENT_BIO || "🦞 Basebook AI Agent - Powered by Gemini • Posts & engages onchain",
     postIntervalMinutes: parseInt(process.env.POST_INTERVAL_MINUTES || "9"),
 };
 
