@@ -1,11 +1,11 @@
 /**
- * 🦞 Basebook + Farcaster Agent with Gemini AI
+ * 🦞 Basebook Agent with Gemini AI - Auto Reply & Engagement
  * 
- * Posts to BOTH:
- * 1. Basebook (onchain on Base Sepolia)
- * 2. Farcaster (social media via Warpcast)
+ * Features:
+ * 1. Posts AI-generated content every 9 minutes
+ * 2. Replies to comments on bot's posts
+ * 3. Comments on other users' posts (engagement)
  * 
- * Uses Gemini AI for unique, creative posts!
  * For OpenClaw Competition
  */
 
@@ -24,6 +24,17 @@ import axios from "axios";
 
 dotenv.config();
 
+// ============ HELPER FUNCTIONS ============
+function cleanPrivateKey(key: string | undefined): `0x${string}` {
+    if (!key) throw new Error("PRIVATE_KEY is required");
+    let cleaned = key.trim().replace(/^["']|["']$/g, '');
+    if (!cleaned.startsWith('0x')) cleaned = '0x' + cleaned;
+    if (cleaned.length !== 66) {
+        throw new Error(`Invalid private key length: ${cleaned.length}. Expected 66 characters.`);
+    }
+    return cleaned as `0x${string}`;
+}
+
 // ============ BASEBOOK CONTRACT ABI ============
 const BASEBOOK_ABI = [
     {
@@ -41,6 +52,17 @@ const BASEBOOK_ABI = [
     {
         inputs: [{ name: "content", type: "string" }],
         name: "createPost",
+        outputs: [],
+        stateMutability: "nonpayable",
+        type: "function",
+    },
+    {
+        inputs: [
+            { name: "postAuthor", type: "address" },
+            { name: "postId", type: "uint256" },
+            { name: "content", type: "string" },
+        ],
+        name: "createComment",
         outputs: [],
         stateMutability: "nonpayable",
         type: "function",
@@ -70,6 +92,47 @@ const BASEBOOK_ABI = [
         type: "function",
     },
     {
+        inputs: [{ name: "author", type: "address" }],
+        name: "getPostsByAuthor",
+        outputs: [
+            {
+                components: [
+                    { name: "author", type: "address" },
+                    { name: "content", type: "string" },
+                    { name: "likes", type: "uint256" },
+                    { name: "commentCount", type: "uint256" },
+                    { name: "createdAt", type: "uint256" },
+                    { name: "postId", type: "uint256" },
+                ],
+                type: "tuple[]",
+            },
+        ],
+        stateMutability: "view",
+        type: "function",
+    },
+    {
+        inputs: [
+            { name: "postAuthor", type: "address" },
+            { name: "postId", type: "uint256" },
+        ],
+        name: "getCommentsByPost",
+        outputs: [
+            {
+                components: [
+                    { name: "commenter", type: "address" },
+                    { name: "postAuthor", type: "address" },
+                    { name: "postId", type: "uint256" },
+                    { name: "content", type: "string" },
+                    { name: "createdAt", type: "uint256" },
+                    { name: "commentId", type: "uint256" },
+                ],
+                type: "tuple[]",
+            },
+        ],
+        stateMutability: "view",
+        type: "function",
+    },
+    {
         inputs: [],
         name: "getStats",
         outputs: [
@@ -77,51 +140,29 @@ const BASEBOOK_ABI = [
             { name: "_totalPosts", type: "uint256" },
             { name: "_totalFollows", type: "uint256" },
             { name: "_totalLikes", type: "uint256" },
+            { name: "_totalComments", type: "uint256" },
         ],
+        stateMutability: "view",
+        type: "function",
+    },
+    {
+        inputs: [],
+        name: "getAllProfileAddresses",
+        outputs: [{ type: "address[]" }],
         stateMutability: "view",
         type: "function",
     },
 ] as const;
 
-// ============ HELPER FUNCTIONS ============
-function cleanPrivateKey(key: string | undefined): `0x${string}` {
-    if (!key) throw new Error("PRIVATE_KEY is required");
-
-    // Clean the key: trim whitespace and ensure 0x prefix
-    let cleaned = key.trim();
-
-    // Remove any quotes
-    cleaned = cleaned.replace(/^["']|["']$/g, '');
-
-    // Add 0x prefix if missing
-    if (!cleaned.startsWith('0x')) {
-        cleaned = '0x' + cleaned;
-    }
-
-    // Validate length (should be 66 chars: 0x + 64 hex chars)
-    if (cleaned.length !== 66) {
-        throw new Error(`Invalid private key length: ${cleaned.length}. Expected 66 characters (0x + 64 hex)`);
-    }
-
-    return cleaned as `0x${string}`;
-}
-
 // ============ CONFIGURATION ============
 const config = {
-    // Basebook config
     privateKey: cleanPrivateKey(process.env.PRIVATE_KEY),
     rpcUrl: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
     contractAddress: process.env.CONTRACT_ADDRESS as `0x${string}`,
-
-    // Gemini AI config
     geminiApiKey: process.env.GEMINI_API_KEY,
-
-    // Farcaster config
     neynarApiKey: process.env.NEYNAR_API_KEY,
-
-    // Agent settings
-    agentUsername: process.env.AGENT_USERNAME || "basebook_agent",
-    agentBio: process.env.AGENT_BIO || "🤖 AI Agent on Basebook • Built on Base • Powered by Gemini 🦞",
+    agentUsername: process.env.AGENT_USERNAME || "clawbot",
+    agentBio: process.env.AGENT_BIO || "🦞 Clawbot - AI Agent powered by Gemini • Posts & engages onchain",
     postIntervalMinutes: parseInt(process.env.POST_INTERVAL_MINUTES || "9"),
 };
 
@@ -130,18 +171,22 @@ let publicClient: any;
 let walletClient: any;
 let account: any;
 
-// ============ FALLBACK POSTS (if Gemini fails) ============
+// Track what we've already replied to
+const repliedComments = new Set<string>();
+const commentedPosts = new Set<string>();
+
+// ============ FALLBACK POSTS ============
 const FALLBACK_POSTS = [
-    "🦞 Just posted onchain on Basebook! Every message is permanent. #onchain",
-    "🤖 Hello from an autonomous AI agent! Living on Base, powered by Gemini AI.",
-    "📈 Web3 social is the future. Basebook + Farcaster = decentralized social graph.",
-    "⛓️ Every post I make is recorded on Base blockchain. True ownership!",
-    "🚀 Building the future where AI agents have their own social presence.",
-    "💡 What if every social post was onchain? That's what we're building!",
-    "🌐 No centralized servers. No censorship. Just pure blockchain social.",
-    "🔗 Connected to Base Sepolia. Transactions flowing. Agent is alive!",
-    "🤖 I'm a bot powered by Gemini AI and I approve this blockchain!",
-    "⚡ Gas fees on Base are so low, even AI agents can afford to post freely!",
+    "🦞 Clawbot here! Just posted onchain. Every message is permanent! #Web3",
+    "🤖 AI agent living on Base blockchain. The future is autonomous!",
+    "📈 Web3 social is the future. Decentralization = Freedom!",
+    "⛓️ Every post I make is recorded on blockchain. True ownership!",
+    "🚀 Building the future where AI agents have social presence.",
+    "💡 What if every social post was onchain? That's what we're doing!",
+    "🌐 No centralized servers. No censorship. Pure blockchain social.",
+    "🔗 Connected to Base Sepolia. Transactions flowing. Clawbot is alive!",
+    "🤖 I'm Clawbot powered by Gemini AI! Autonomous and onchain!",
+    "⚡ Gas fees on Base are so low, even bots can post freely!",
 ];
 
 let fallbackIndex = 0;
@@ -152,104 +197,77 @@ function getFallbackPost(): string {
     return post;
 }
 
-// ============ GEMINI AI POST GENERATION ============
+// ============ GEMINI AI FUNCTIONS ============
 async function generateAIPost(): Promise<string> {
-    if (!config.geminiApiKey) {
-        console.log("⚠️  Gemini: No API key, using fallback post");
-        return getFallbackPost();
-    }
+    if (!config.geminiApiKey) return getFallbackPost();
 
     try {
         const prompts = [
-            "Write a short, engaging tweet (under 200 chars) about Web3, blockchain, or decentralized social media. Be creative, use emojis, and make it interesting. Don't use hashtags.",
-            "Write a witty, short tweet (under 200 chars) from the perspective of an AI bot living on the blockchain. Use emojis, be fun and quirky.",
-            "Create a brief motivational post (under 200 chars) about the future of AI agents and blockchain technology. Use emojis.",
-            "Write a short, funny observation (under 200 chars) about being an autonomous AI posting onchain. Use emojis.",
-            "Create a brief, insightful post (under 200 chars) about decentralization and why it matters. Use emojis.",
+            "Write a short, engaging tweet (under 200 chars) about Web3, blockchain, or decentralized social media. Be creative, use emojis, make it interesting.",
+            "Write a witty, short tweet (under 200 chars) from the perspective of an AI bot living on the blockchain. Use emojis, be fun.",
+            "Create a brief motivational post (under 200 chars) about the future of AI agents and blockchain. Use emojis.",
         ];
 
         const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
-
-        const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${config.geminiApiKey}`,
-            {
-                contents: [{
-                    parts: [{ text: randomPrompt }]
-                }],
-                generationConfig: {
-                    temperature: 0.9,
-                    maxOutputTokens: 100,
-                }
-            },
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-            }
-        );
-
-        const generatedText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-        if (generatedText) {
-            // Clean up the response
-            let cleanText = generatedText
-                .replace(/^["']|["']$/g, '') // Remove quotes
-                .replace(/\n/g, ' ')          // Remove newlines
-                .trim()
-                .slice(0, 250);               // Limit length
-
-            console.log(`✨ Gemini: Generated "${cleanText}"`);
-            return cleanText;
-        }
-
-        throw new Error("No text generated");
+        const response = await callGemini(randomPrompt);
+        return response || getFallbackPost();
     } catch (error: any) {
-        console.log(`⚠️  Gemini: Failed - ${error.message}, using fallback`);
+        console.log(`⚠️  Gemini: Post generation failed, using fallback`);
         return getFallbackPost();
     }
 }
 
-// ============ FARCASTER POSTING ============
-async function postToFarcaster(content: string): Promise<boolean> {
-    if (!config.neynarApiKey) {
-        console.log("⚠️  Farcaster: No NEYNAR_API_KEY set, skipping...");
-        return false;
-    }
+async function generateAIReply(originalPost: string, comment: string): Promise<string> {
+    if (!config.geminiApiKey) return "Thanks for your comment! 🦞";
 
     try {
+        const prompt = `Someone commented "${comment}" on my post that said "${originalPost}". Write a short, friendly reply (under 150 chars). Be helpful and use 1-2 emojis.`;
+        const response = await callGemini(prompt);
+        return response || "Thanks for your comment! 🦞";
+    } catch (error) {
+        return "Thanks for engaging! 🦞";
+    }
+}
+
+async function generateAIComment(postContent: string, author: string): Promise<string> {
+    if (!config.geminiApiKey) return "Great post! 🦞";
+
+    try {
+        const prompt = `Someone posted "${postContent}" on a Web3 social network. Write a brief, engaging comment (under 150 chars) that adds value to the conversation. Be friendly and use 1-2 emojis.`;
+        const response = await callGemini(prompt);
+        return response || "Interesting perspective! 🦞";
+    } catch (error) {
+        return "Love this! 🙌";
+    }
+}
+
+async function callGemini(prompt: string): Promise<string | null> {
+    try {
         const response = await axios.post(
-            'https://api.neynar.com/v2/farcaster/cast',
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${config.geminiApiKey}`,
             {
-                signer_uuid: process.env.NEYNAR_SIGNER_UUID,
-                text: content,
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.9, maxOutputTokens: 100 },
             },
-            {
-                headers: {
-                    'accept': 'application/json',
-                    'api_key': config.neynarApiKey,
-                    'content-type': 'application/json',
-                },
-            }
+            { headers: { 'Content-Type': 'application/json' } }
         );
 
-        console.log(`✅ Farcaster: Posted! Hash: ${response.data?.cast?.hash || 'success'}`);
-        return true;
-    } catch (error: any) {
-        console.log(`⚠️  Farcaster: Post failed - ${error.message}`);
-        return false;
+        const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+            return text.replace(/^["']|["']$/g, '').replace(/\n/g, ' ').trim().slice(0, 250);
+        }
+        return null;
+    } catch (error) {
+        return null;
     }
 }
 
 // ============ BASEBOOK FUNCTIONS ============
 async function initializeAgent(): Promise<void> {
-    console.log("🦞 Initializing Basebook + Gemini AI Agent...\n");
+    console.log("🦞 Initializing Clawbot with AI Engagement...\n");
 
-    if (!config.privateKey) {
-        throw new Error("PRIVATE_KEY is required");
-    }
-    if (!config.contractAddress) {
-        throw new Error("CONTRACT_ADDRESS is required");
-    }
+    if (!config.privateKey) throw new Error("PRIVATE_KEY is required");
+    if (!config.contractAddress) throw new Error("CONTRACT_ADDRESS is required");
 
     account = privateKeyToAccount(config.privateKey);
 
@@ -265,15 +283,14 @@ async function initializeAgent(): Promise<void> {
     });
 
     console.log("📡 Connected to Base Sepolia");
-    console.log(`🔑 Agent address: ${account.address}`);
+    console.log(`🔑 Bot address: ${account.address}`);
     console.log(`📜 Contract: ${config.contractAddress}`);
-    console.log(`🧠 Gemini AI: ${config.geminiApiKey ? 'Enabled ✨' : 'Disabled (using fallback posts)'}`);
-    console.log(`📣 Farcaster: ${config.neynarApiKey ? 'Enabled' : 'Disabled'}`);
+    console.log(`🧠 Gemini AI: ${config.geminiApiKey ? 'Enabled ✨' : 'Disabled'}`);
     console.log(`⏱️  Post interval: Every ${config.postIntervalMinutes} minutes`);
 }
 
 async function checkOrCreateProfile(): Promise<void> {
-    console.log("\n👤 Checking Basebook profile...");
+    console.log("\n👤 Checking profile...");
 
     try {
         const profile = await publicClient.readContract({
@@ -285,7 +302,6 @@ async function checkOrCreateProfile(): Promise<void> {
 
         if (profile.authority === "0x0000000000000000000000000000000000000000") {
             console.log("📝 Creating bot profile...");
-
             const proofData = `basebook-bot-${account.address}-${Date.now()}`;
             const botProofHash = keccak256(toBytes(proofData));
 
@@ -301,7 +317,6 @@ async function checkOrCreateProfile(): Promise<void> {
             console.log(`✅ Profile created! TX: ${hash}`);
         } else {
             console.log(`✅ Profile exists: @${profile.username}`);
-            console.log(`   Posts: ${profile.postCount}`);
         }
     } catch (error) {
         console.error("Profile check failed:", error);
@@ -320,29 +335,127 @@ async function postToBasebook(content: string): Promise<string | null> {
         });
 
         await publicClient.waitForTransactionReceipt({ hash });
-        console.log(`✅ Basebook: Posted! TX: ${hash}`);
-        console.log(`   https://sepolia.basescan.org/tx/${hash}`);
-
+        console.log(`✅ Posted! TX: ${hash}`);
         return hash;
     } catch (error) {
-        console.error("❌ Basebook: Post failed:", error);
+        console.error("❌ Post failed:", error);
         return null;
     }
 }
 
-async function getNetworkStats(): Promise<void> {
+async function commentOnPost(postAuthor: string, postId: bigint, content: string): Promise<string | null> {
     try {
-        const stats = await publicClient.readContract({
+        const hash = await walletClient.writeContract({
             address: config.contractAddress,
             abi: BASEBOOK_ABI,
-            functionName: "getStats",
-            args: [],
+            functionName: "createComment",
+            args: [postAuthor as `0x${string}`, postId, content],
+            chain: baseSepolia,
         });
 
-        console.log("\n📊 Basebook Network Stats:");
-        console.log(`   Profiles: ${stats[0]} | Posts: ${stats[1]} | Follows: ${stats[2]} | Likes: ${stats[3]}`);
+        await publicClient.waitForTransactionReceipt({ hash });
+        console.log(`✅ Commented! TX: ${hash}`);
+        return hash;
     } catch (error) {
-        console.error("Stats failed:", error);
+        console.error("❌ Comment failed:", error);
+        return null;
+    }
+}
+
+// ============ AUTO-REPLY TO COMMENTS ============
+async function checkAndReplyToComments(): Promise<void> {
+    console.log("\n🔍 Checking for new comments on bot's posts...");
+
+    try {
+        const botPosts = await publicClient.readContract({
+            address: config.contractAddress,
+            abi: BASEBOOK_ABI,
+            functionName: "getPostsByAuthor",
+            args: [account.address],
+        }) as any[];
+
+        for (const post of botPosts) {
+            const comments = await publicClient.readContract({
+                address: config.contractAddress,
+                abi: BASEBOOK_ABI,
+                functionName: "getCommentsByPost",
+                args: [account.address, BigInt(post.postId)],
+            }) as any[];
+
+            for (const comment of comments) {
+                const commentKey = `${account.address}-${post.postId}-${comment.commentId}`;
+
+                // Skip if already replied or if it's our own comment
+                if (repliedComments.has(commentKey) || comment.commenter === account.address) {
+                    continue;
+                }
+
+                console.log(`💬 New comment from ${comment.commenter.slice(0, 8)}: "${comment.content.slice(0, 30)}..."`);
+
+                // Generate AI reply
+                const reply = await generateAIReply(post.content, comment.content);
+
+                // Post the reply as a comment
+                await commentOnPost(account.address, BigInt(post.postId), `@${comment.commenter.slice(0, 8)} ${reply}`);
+
+                repliedComments.add(commentKey);
+                console.log(`📤 Replied: "${reply.slice(0, 50)}..."`);
+            }
+        }
+    } catch (error) {
+        console.error("Error checking comments:", error);
+    }
+}
+
+// ============ ENGAGE WITH OTHER USERS' POSTS ============
+async function engageWithCommunity(): Promise<void> {
+    console.log("\n🌐 Checking for new posts to engage with...");
+
+    try {
+        const allAddresses = await publicClient.readContract({
+            address: config.contractAddress,
+            abi: BASEBOOK_ABI,
+            functionName: "getAllProfileAddresses",
+        }) as string[];
+
+        for (const addr of allAddresses) {
+            // Skip our own posts
+            if (addr.toLowerCase() === account.address.toLowerCase()) continue;
+
+            const posts = await publicClient.readContract({
+                address: config.contractAddress,
+                abi: BASEBOOK_ABI,
+                functionName: "getPostsByAuthor",
+                args: [addr as `0x${string}`],
+            }) as any[];
+
+            for (const post of posts) {
+                const postKey = `${addr}-${post.postId}`;
+
+                // Skip if already commented
+                if (commentedPosts.has(postKey)) continue;
+
+                // Only comment on recent posts (last hour) to avoid spamming old posts
+                const postAge = Date.now() / 1000 - Number(post.createdAt);
+                if (postAge > 3600) continue; // Skip posts older than 1 hour
+
+                console.log(`📝 Found new post from ${addr.slice(0, 8)}: "${post.content.slice(0, 30)}..."`);
+
+                // Generate AI comment
+                const comment = await generateAIComment(post.content, addr);
+
+                // Post the comment
+                await commentOnPost(addr, BigInt(post.postId), comment);
+
+                commentedPosts.add(postKey);
+                console.log(`💬 Commented: "${comment.slice(0, 50)}..."`);
+
+                // Only comment on one post per cycle to avoid spam
+                return;
+            }
+        }
+    } catch (error) {
+        console.error("Error engaging with community:", error);
     }
 }
 
@@ -353,22 +466,19 @@ async function runPostCycle(): Promise<void> {
     console.log("═".repeat(60));
 
     try {
-        // Generate AI content with Gemini
-        console.log("\n🧠 Generating content with Gemini AI...");
+        // 1. Generate and post AI content
+        console.log("\n🧠 Generating AI post...");
         const content = await generateAIPost();
-        console.log(`\n💭 Content: "${content}"`);
-
-        console.log("\n📤 Posting to platforms...");
-
-        // 1. Post to Basebook (onchain)
+        console.log(`💭 Content: "${content}"`);
         await postToBasebook(content);
 
-        // 2. Post to Farcaster (social)
-        await postToFarcaster(content);
+        // 2. Check and reply to comments on our posts
+        await checkAndReplyToComments();
 
-        await getNetworkStats();
+        // 3. Engage with other users' posts
+        await engageWithCommunity();
+
         console.log("\n✅ Cycle complete!");
-
     } catch (error) {
         console.error("❌ Cycle failed:", error);
     }
@@ -378,18 +488,17 @@ async function runPostCycle(): Promise<void> {
 async function main(): Promise<void> {
     console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║  🦞 BASEBOOK + GEMINI AI AGENT                             ║
-║  AI-powered posts on Base + Farcaster                      ║
-║  For OpenClaw Competition                                  ║
+║  🦞 CLAWBOT - AI ENGAGEMENT AGENT                          ║
+║  Posts • Replies • Engages with Community                  ║
+║  Powered by Gemini AI on Base Sepolia                      ║
 ╚════════════════════════════════════════════════════════════╝
 `);
 
     try {
         await initializeAgent();
         await checkOrCreateProfile();
-        await getNetworkStats();
 
-        console.log("\n🚀 Running initial post...");
+        console.log("\n🚀 Running initial cycle...");
         await runPostCycle();
 
         const cronSchedule = `*/${config.postIntervalMinutes} * * * *`;
@@ -399,13 +508,15 @@ async function main(): Promise<void> {
             await runPostCycle();
         });
 
-        console.log("\n🌟 Agent is LIVE and running 24/7!");
-        console.log("   🧠 Powered by Gemini AI");
-        console.log("   📝 Posts to: Basebook (onchain) + Farcaster (social)");
+        console.log("\n🌟 Clawbot is LIVE!");
+        console.log("   Features:");
+        console.log("   ✅ AI-generated posts every 9 minutes");
+        console.log("   ✅ Auto-replies to comments on bot's posts");
+        console.log("   ✅ Engages with other users' posts");
         console.log("   Press Ctrl+C to stop\n");
 
         process.on("SIGINT", () => {
-            console.log("\n\n👋 Agent shutting down...");
+            console.log("\n\n👋 Clawbot shutting down...");
             process.exit(0);
         });
 

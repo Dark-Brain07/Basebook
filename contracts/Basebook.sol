@@ -31,8 +31,18 @@ contract Basebook {
         address author;             // Post author
         string content;             // Max 280 characters
         uint256 likes;              // Number of likes
+        uint256 commentCount;       // Number of comments
         uint256 createdAt;          // Creation timestamp
         uint256 postId;             // Post ID for this author
+    }
+    
+    struct Comment {
+        address commenter;          // Who commented
+        address postAuthor;         // Original post author
+        uint256 postId;             // Post ID being commented on
+        string content;             // Comment content (max 280 chars)
+        uint256 createdAt;          // When comment was made
+        uint256 commentId;          // Comment ID for this post
     }
     
     struct Referral {
@@ -61,11 +71,18 @@ contract Basebook {
     // Referrer stats: referrer => count
     mapping(address => uint256) public referralCounts;
     
+    // Comment storage: postAuthor => postId => commentId => Comment
+    mapping(address => mapping(uint256 => mapping(uint256 => Comment))) public comments;
+    
+    // Comment count per post: postAuthor => postId => count
+    mapping(address => mapping(uint256 => uint256)) public commentCounts;
+    
     // Network statistics
     uint256 public totalProfiles;
     uint256 public totalPosts;
     uint256 public totalFollows;
     uint256 public totalLikes;
+    uint256 public totalComments;
     
     // All profile addresses for iteration
     address[] public profileAddresses;
@@ -126,6 +143,15 @@ contract Basebook {
     event ReferralRecorded(
         address indexed referred,
         address indexed referrer,
+        uint256 timestamp
+    );
+    
+    event CommentCreated(
+        address indexed commenter,
+        address indexed postAuthor,
+        uint256 indexed postId,
+        uint256 commentId,
+        string content,
         uint256 timestamp
     );
     
@@ -281,6 +307,7 @@ contract Basebook {
             author: msg.sender,
             content: content,
             likes: 0,
+            commentCount: 0,
             createdAt: block.timestamp,
             postId: postId
         });
@@ -289,6 +316,39 @@ contract Basebook {
         totalPosts++;
         
         emit PostCreated(msg.sender, postId, content, block.timestamp);
+    }
+    
+    /**
+     * @notice Create a comment on a post
+     * @param postAuthor Address of the post author
+     * @param postId Post ID to comment on
+     * @param content Comment content (max 280 chars)
+     */
+    function createComment(
+        address postAuthor,
+        uint256 postId,
+        string calldata content
+    ) external hasProfile {
+        require(posts[postAuthor][postId].author != address(0), "Post does not exist");
+        require(bytes(content).length > 0, "Content required");
+        require(bytes(content).length <= 280, "Content too long");
+        
+        uint256 commentId = commentCounts[postAuthor][postId];
+        
+        comments[postAuthor][postId][commentId] = Comment({
+            commenter: msg.sender,
+            postAuthor: postAuthor,
+            postId: postId,
+            content: content,
+            createdAt: block.timestamp,
+            commentId: commentId
+        });
+        
+        commentCounts[postAuthor][postId]++;
+        posts[postAuthor][postId].commentCount++;
+        totalComments++;
+        
+        emit CommentCreated(msg.sender, postAuthor, postId, commentId, content, block.timestamp);
     }
     
     // ============ Follow Functions ============
@@ -438,9 +498,26 @@ contract Basebook {
         uint256 _totalProfiles,
         uint256 _totalPosts,
         uint256 _totalFollows,
-        uint256 _totalLikes
+        uint256 _totalLikes,
+        uint256 _totalComments
     ) {
-        return (totalProfiles, totalPosts, totalFollows, totalLikes);
+        return (totalProfiles, totalPosts, totalFollows, totalLikes, totalComments);
+    }
+    
+    /**
+     * @notice Get all comments on a post
+     * @param postAuthor Post author address
+     * @param postId Post ID
+     */
+    function getCommentsByPost(address postAuthor, uint256 postId) external view returns (Comment[] memory) {
+        uint256 count = commentCounts[postAuthor][postId];
+        Comment[] memory postComments = new Comment[](count);
+        
+        for (uint256 i = 0; i < count; i++) {
+            postComments[i] = comments[postAuthor][postId][i];
+        }
+        
+        return postComments;
     }
     
     /**
