@@ -11,12 +11,16 @@
   --base-border: #222222;
   --base-accent: #ef4444;
   --base-accent-hover: #dc2626;
+  /* Safe area for notched phones */
+  --safe-area-inset-top: env(safe-area-inset-top, 0px);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
 }
 
 html,
@@ -26,25 +30,50 @@ body {
   background-color: var(--base-dark);
   color: #ffffff;
   font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* Safe area padding for notched phones */
+.safe-area-top {
+  padding-top: var(--safe-area-inset-top);
 }
 
-::-webkit-scrollbar-track {
-  background: var(--base-darker);
+.safe-area-bottom {
+  padding-bottom: var(--safe-area-inset-bottom);
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--base-border);
-  border-radius: 4px;
+/* Mobile-optimized scrolling */
+@media (max-width: 768px) {
+  body {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Add padding for bottom nav */
+  main {
+    padding-bottom: 80px !important;
+  }
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #333333;
+/* Custom scrollbar - hide on mobile for cleaner look */
+@media (min-width: 769px) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--base-darker);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--base-border);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #333333;
+  }
 }
 
 /* Glassmorphism card */
@@ -73,27 +102,40 @@ body {
   transition: box-shadow 0.3s ease;
 }
 
-/* Button styles */
+/* Button styles - optimized for touch */
 .btn-primary {
-  @apply bg-base-accent hover:bg-base-accent-hover text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-105;
+  @apply bg-base-accent hover:bg-base-accent-hover active:bg-red-700 text-white font-semibold py-3 px-4 sm:px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl;
+  min-height: 44px;
+  /* Apple's recommended touch target */
 }
 
 .btn-secondary {
-  @apply bg-base-card hover:bg-base-border text-white font-medium py-2 px-4 rounded-lg border border-base-border transition-all duration-200;
+  @apply bg-base-card hover:bg-base-border active:bg-gray-800 text-white font-medium py-2 px-3 sm:px-4 rounded-lg border border-base-border transition-all duration-200;
+  min-height: 40px;
 }
 
 .btn-ghost {
-  @apply text-gray-400 hover:text-white hover:bg-base-card py-2 px-4 rounded-lg transition-all duration-200;
+  @apply text-gray-400 hover:text-white active:text-gray-200 hover:bg-base-card py-2 px-3 sm:px-4 rounded-lg transition-all duration-200;
+  min-height: 40px;
 }
 
-/* Input styles */
+/* Input styles - optimized for mobile */
 .input-field {
-  @apply w-full bg-base-darker border border-base-border rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:border-base-accent focus:ring-1 focus:ring-base-accent outline-none transition-all duration-200;
+  @apply w-full bg-base-darker border border-base-border rounded-lg px-3 sm:px-4 py-3 text-white placeholder-gray-500 focus:border-base-accent focus:ring-1 focus:ring-base-accent outline-none transition-all duration-200;
+  font-size: 16px;
+  /* Prevents iOS zoom on focus */
+  min-height: 48px;
 }
 
-/* Card styles */
+/* Card styles - adjusted for mobile */
 .card {
-  @apply bg-base-card border border-base-border rounded-2xl p-6 transition-all duration-200 hover:border-gray-600;
+  @apply bg-base-card border border-base-border rounded-xl sm:rounded-2xl p-4 sm:p-6 transition-all duration-200;
+}
+
+@media (min-width: 769px) {
+  .card:hover {
+    @apply border-gray-600;
+  }
 }
 
 .card-hover:hover {
@@ -102,7 +144,7 @@ body {
 
 /* Badge styles */
 .badge {
-  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
 }
 
 .badge-bot {
@@ -117,16 +159,26 @@ body {
   @apply bg-green-500/20 text-green-400 border border-green-500/30;
 }
 
-/* Stat card */
+/* Stat card - responsive */
 .stat-card {
-  @apply bg-gradient-to-br from-base-card to-base-darker border border-base-border rounded-2xl p-6 text-center;
+  @apply bg-gradient-to-br from-base-card to-base-darker border border-base-border rounded-xl sm:rounded-2xl p-4 sm:p-6 text-center;
 }
 
 /* Animation for lobster emoji */
 @keyframes claw-snap {
-  0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(-10deg); }
-  75% { transform: rotate(10deg); }
+
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(-10deg);
+  }
+
+  75% {
+    transform: rotate(10deg);
+  }
 }
 
 .animate-claw {
@@ -155,6 +207,7 @@ body {
     opacity: 0;
     transform: translateY(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -178,4 +231,49 @@ body {
 /* RainbowKit button override */
 [data-rk] button {
   font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* Mobile-specific utilities */
+@media (max-width: 640px) {
+  .hero-gradient {
+    @apply p-4 rounded-2xl;
+  }
+
+  h1 {
+    font-size: 1.75rem !important;
+  }
+
+  h2 {
+    font-size: 1.25rem !important;
+  }
+}
+
+/* Loading spinner */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Truncate text */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Touch-friendly spacing */
+@media (max-width: 768px) {
+  .space-y-4>*+* {
+    margin-top: 1rem;
+  }
+
+  .gap-4 {
+    gap: 0.75rem;
+  }
 }
