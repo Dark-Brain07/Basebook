@@ -15,6 +15,7 @@ interface PostCardProps {
     isBot?: boolean;
     hasLiked?: boolean;
     onLike?: () => void;
+    commentCount?: number;
 }
 
 export function PostCard({
@@ -27,10 +28,14 @@ export function PostCard({
     isBot = false,
     hasLiked = false,
     onLike,
+    commentCount = 0,
 }: PostCardProps) {
     const { address } = useAccount();
     const [liked, setLiked] = useState(hasLiked);
     const [likeCount, setLikeCount] = useState(likes);
+    const [showCommentInput, setShowCommentInput] = useState(false);
+    const [commentText, setCommentText] = useState("");
+    const [isCommenting, setIsCommenting] = useState(false);
 
     const { writeContract, data: hash } = useWriteContract();
     const { isLoading } = useWaitForTransactionReceipt({ hash });
@@ -65,6 +70,41 @@ export function PostCard({
         } catch (error) {
             console.error("Like error:", error);
             toast.error("Failed to like post");
+        }
+    };
+
+    const handleComment = async () => {
+        if (!address) {
+            toast.error("Please connect your wallet");
+            return;
+        }
+
+        if (!commentText.trim()) {
+            toast.error("Please enter a comment");
+            return;
+        }
+
+        if (commentText.length > 280) {
+            toast.error("Comment must be 280 characters or less");
+            return;
+        }
+
+        setIsCommenting(true);
+        try {
+            writeContract({
+                address: BASEBOOK_ADDRESS,
+                abi: BASEBOOK_ABI,
+                functionName: "createComment",
+                args: [author as `0x${string}`, BigInt(postId), commentText],
+            });
+            toast.success("Comment posted! 🦞");
+            setCommentText("");
+            setShowCommentInput(false);
+        } catch (error) {
+            console.error("Comment error:", error);
+            toast.error("Failed to post comment");
+        } finally {
+            setIsCommenting(false);
         }
     };
 
@@ -124,8 +164,8 @@ export function PostCard({
                     onClick={handleLike}
                     disabled={isLoading}
                     className={`flex items-center gap-2 text-sm transition-all duration-200 ${liked
-                            ? "text-red-500"
-                            : "text-gray-500 hover:text-red-500"
+                        ? "text-red-500"
+                        : "text-gray-500 hover:text-red-500"
                         }`}
                 >
                     <span className={`text-lg ${liked ? "scale-110" : ""} transition-transform`}>
@@ -134,9 +174,12 @@ export function PostCard({
                     <span>{likeCount}</span>
                 </button>
 
-                <button className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors">
+                <button
+                    onClick={() => setShowCommentInput(!showCommentInput)}
+                    className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors"
+                >
                     <span className="text-lg">💬</span>
-                    <span>Reply</span>
+                    <span>Reply {commentCount > 0 && `(${commentCount})`}</span>
                 </button>
 
                 <button className="flex items-center gap-2 text-sm text-gray-500 hover:text-green-400 transition-colors">
@@ -144,6 +187,42 @@ export function PostCard({
                     <span>Share</span>
                 </button>
             </div>
+
+            {/* Comment Input */}
+            {showCommentInput && (
+                <div className="mt-4 pt-4 border-t border-base-border">
+                    <div className="flex gap-3">
+                        <textarea
+                            value={commentText}
+                            onChange={(e) => setCommentText(e.target.value)}
+                            placeholder="Write a reply..."
+                            className="flex-1 bg-base-card border border-base-border rounded-lg p-3 text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-base-accent"
+                            rows={2}
+                            maxLength={280}
+                        />
+                    </div>
+                    <div className="flex justify-between items-center mt-2">
+                        <span className="text-xs text-gray-500">
+                            {commentText.length}/280
+                        </span>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setShowCommentInput(false)}
+                                className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleComment}
+                                disabled={isCommenting || !commentText.trim()}
+                                className="px-4 py-2 text-sm bg-base-accent text-white rounded-lg hover:bg-base-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                {isCommenting ? "Posting..." : "Reply"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
