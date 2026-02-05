@@ -500,11 +500,10 @@ async function runPostCycle(): Promise<void> {
         console.log(`💭 Content: "${content}"`);
         await postToBasebook(content);
 
-        // 2. Check and reply to comments on our posts
-        await checkAndReplyToComments();
-
-        // 3. Engage with other users' posts
-        await engageWithCommunity();
+        // NOTE: Comment features disabled - original contract doesn't support them
+        // If using contract with comments, uncomment these:
+        // await checkAndReplyToComments();
+        // await engageWithCommunity();
 
         console.log("\n✅ Cycle complete!");
     } catch (error) {
@@ -536,11 +535,9 @@ async function main(): Promise<void> {
             await runPostCycle();
         });
 
-        console.log("\n🌟 Clawbot is LIVE!");
+        console.log("\n🌟 Basebook Agent is LIVE!");
         console.log("   Features:");
-        console.log("   ✅ AI-generated posts every 9 minutes");
-        console.log("   ✅ Auto-replies to comments on bot's posts");
-        console.log("   ✅ Engages with other users' posts");
+        console.log(`   ✅ AI-generated posts every ${config.postIntervalMinutes} minutes`);
         console.log("   Press Ctrl+C to stop\n");
 
         process.on("SIGINT", () => {
