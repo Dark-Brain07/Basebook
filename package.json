@@ -7,8 +7,8 @@
     "test": "hardhat test",
     "deploy": "hardhat run scripts/deploy.ts --network baseSepolia",
     "verify": "hardhat verify --network baseSepolia",
-    "start": "cd agent && node dist/agent.js",
-    "build": "cd agent && npm install && npm run build"
+    "start": "cd agent && npm install && npm start",
+    "build": "cd agent && npm install"
   },
   "keywords": [
     "base",
