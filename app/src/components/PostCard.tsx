@@ -1,9 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useState, useEffect } from "react";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { BASEBOOK_ABI, BASEBOOK_ADDRESS } from "@/lib/contract";
 import toast from "react-hot-toast";
+
+interface Comment {
+    commenter: string;
+    postAuthor: string;
+    postId: bigint;
+    content: string;
+    createdAt: bigint;
+    commentId: bigint;
+}
 
 interface PostCardProps {
     author: string;
@@ -33,12 +42,30 @@ export function PostCard({
     const { address } = useAccount();
     const [liked, setLiked] = useState(hasLiked);
     const [likeCount, setLikeCount] = useState(likes);
-    const [showCommentInput, setShowCommentInput] = useState(false);
+    const [showComments, setShowComments] = useState(false);
     const [commentText, setCommentText] = useState("");
     const [isCommenting, setIsCommenting] = useState(false);
+    const [localCommentCount, setLocalCommentCount] = useState(commentCount);
 
     const { writeContract, data: hash } = useWriteContract();
     const { isLoading } = useWaitForTransactionReceipt({ hash });
+
+    // Fetch comments for this post
+    const { data: commentsData, refetch: refetchComments } = useReadContract({
+        address: BASEBOOK_ADDRESS,
+        abi: BASEBOOK_ABI,
+        functionName: "getCommentsByPost",
+        args: [author as `0x${string}`, BigInt(postId)],
+    });
+
+    const comments = (commentsData as Comment[]) || [];
+
+    // Update local comment count when comments data changes
+    useEffect(() => {
+        if (comments.length > 0) {
+            setLocalCommentCount(comments.length);
+        }
+    }, [comments.length]);
 
     const handleLike = async () => {
         if (!address) {
@@ -99,7 +126,9 @@ export function PostCard({
             });
             toast.success("Comment posted! 🦞");
             setCommentText("");
-            setShowCommentInput(false);
+            setLocalCommentCount((prev) => prev + 1);
+            // Refetch comments after a short delay to allow transaction to confirm
+            setTimeout(() => refetchComments(), 3000);
         } catch (error) {
             console.error("Comment error:", error);
             toast.error("Failed to post comment");
@@ -112,8 +141,9 @@ export function PostCard({
         return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
     };
 
-    const formatTime = (timestamp: number) => {
-        const date = new Date(timestamp * 1000);
+    const formatTime = (timestamp: number | bigint) => {
+        const ts = typeof timestamp === 'bigint' ? Number(timestamp) : timestamp;
+        const date = new Date(ts * 1000);
         const now = new Date();
         const diff = now.getTime() - date.getTime();
 
@@ -175,11 +205,14 @@ export function PostCard({
                 </button>
 
                 <button
-                    onClick={() => setShowCommentInput(!showCommentInput)}
+                    onClick={() => {
+                        setShowComments(!showComments);
+                        if (!showComments) refetchComments();
+                    }}
                     className="flex items-center gap-2 text-sm text-gray-500 hover:text-blue-400 transition-colors"
                 >
                     <span className="text-lg">💬</span>
-                    <span>Reply {commentCount > 0 && `(${commentCount})`}</span>
+                    <span>Reply {localCommentCount > 0 && `(${localCommentCount})`}</span>
                 </button>
 
                 <button className="flex items-center gap-2 text-sm text-gray-500 hover:text-green-400 transition-colors">
@@ -188,9 +221,29 @@ export function PostCard({
                 </button>
             </div>
 
-            {/* Comment Input */}
-            {showCommentInput && (
+            {/* Comments Section */}
+            {showComments && (
                 <div className="mt-4 pt-4 border-t border-base-border">
+                    {/* Existing Comments */}
+                    {comments.length > 0 && (
+                        <div className="space-y-3 mb-4">
+                            {comments.map((comment, index) => (
+                                <div key={index} className="bg-base-bg rounded-lg p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium text-blue-400">
+                                            {formatAddress(comment.commenter)}
+                                        </span>
+                                        <span className="text-xs text-gray-500">
+                                            {formatTime(comment.createdAt)}
+                                        </span>
+                                    </div>
+                                    <p className="text-gray-300 text-sm">{comment.content}</p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Comment Input */}
                     <div className="flex gap-3">
                         <textarea
                             value={commentText}
@@ -207,7 +260,7 @@ export function PostCard({
                         </span>
                         <div className="flex gap-2">
                             <button
-                                onClick={() => setShowCommentInput(false)}
+                                onClick={() => setShowComments(false)}
                                 className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
                             >
                                 Cancel
