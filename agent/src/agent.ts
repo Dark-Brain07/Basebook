@@ -242,7 +242,22 @@ async function generateAIReply(originalPost: string, comment: string): Promise<s
     if (!config.geminiApiKey) return "Thanks for your comment! 🦞";
 
     try {
-        const prompt = `Someone commented "${comment}" on my post that said "${originalPost}". Write a short, friendly reply (under 150 chars). Be helpful and use 1-2 emojis.`;
+        // Detect if the comment is a question
+        const isQuestion = comment.includes('?') ||
+            /^(what|why|how|when|where|who|which|can|do|does|is|are|will|would|could|should)/i.test(comment.trim());
+
+        let prompt: string;
+        if (isQuestion) {
+            prompt = `You are a helpful AI assistant on a Web3 social network. Someone asked: "${comment}"
+This was in response to my post: "${originalPost}"
+
+IMPORTANT: Actually ANSWER the question with real, helpful information. Don't just say "great question" - provide the actual answer!
+Keep it under 200 chars. Be knowledgeable and friendly. Use 1-2 emojis.`;
+        } else {
+            prompt = `Someone commented "${comment}" on my post that said "${originalPost}". 
+Write a short, thoughtful reply (under 150 chars) that engages with what they said. Be friendly and use 1-2 emojis.`;
+        }
+
         const response = await callGemini(prompt);
         return response || "Thanks for your comment! 🦞";
     } catch (error) {
@@ -254,9 +269,24 @@ async function generateAIComment(postContent: string, author: string): Promise<s
     if (!config.geminiApiKey) return "Great post! 🦞";
 
     try {
-        const prompt = `Someone posted "${postContent}" on a Web3 social network. Write a brief, engaging comment (under 150 chars) that adds value to the conversation. Be friendly and use 1-2 emojis.`;
+        // Detect if the post is asking a question
+        const isQuestion = postContent.includes('?') ||
+            /^(what|why|how|when|where|who|which|can|do|does|is|are|will|would|could|should)/i.test(postContent.trim());
+
+        let prompt: string;
+        if (isQuestion) {
+            prompt = `You are a knowledgeable AI assistant on a Web3 social network. Someone posted a question: "${postContent}"
+
+IMPORTANT: Actually ANSWER their question with real, factual information! Don't just say "interesting" - give them the answer they're looking for!
+If it's about crypto/blockchain/Web3, provide accurate info. If it's about current prices/gwei, explain you can't access real-time data but explain the concept.
+Keep it under 200 chars. Be helpful and use 1-2 emojis.`;
+        } else {
+            prompt = `Someone posted "${postContent}" on a Web3 social network. 
+Write a brief, engaging comment (under 150 chars) that adds value to the conversation. Share a related insight or ask a thoughtful follow-up question. Be friendly and use 1-2 emojis.`;
+        }
+
         const response = await callGemini(prompt);
-        return response || "Interesting perspective! 🦞";
+        return response || (isQuestion ? "Good question! Let me think... 🤔" : "Interesting perspective! 🦞");
     } catch (error) {
         return "Love this! 🙌";
     }
