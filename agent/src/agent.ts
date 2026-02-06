@@ -493,10 +493,11 @@ async function runPostCycle(): Promise<void> {
         console.log(`💭 Content: "${content}"`);
         await postToBasebook(content);
 
-        // NOTE: Comment features disabled - original contract doesn't support them
-        // If using contract with comments, uncomment these:
-        // await checkAndReplyToComments();
-        // await engageWithCommunity();
+        // 2. Check and reply to comments on our posts
+        await checkAndReplyToComments();
+
+        // 3. Engage with other users' posts
+        await engageWithCommunity();
 
         console.log("\n✅ Cycle complete!");
     } catch (error) {
