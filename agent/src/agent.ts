@@ -212,17 +212,165 @@ function getFallbackPost(): string {
     return FALLBACK_POSTS[index];
 }
 
+// ============ REAL-TIME CRYPTO DATA ============
+interface TrendingCoin {
+    item: {
+        id: string;
+        name: string;
+        symbol: string;
+        price_btc: number;
+    };
+}
+
+interface CoinPrice {
+    id: string;
+    name: string;
+    symbol: string;
+    current_price: number;
+    price_change_percentage_24h: number;
+    market_cap: number;
+}
+
+async function getTrendingCoins(): Promise<string[]> {
+    try {
+        const response = await axios.get('https://api.coingecko.com/api/v3/search/trending', {
+            timeout: 5000
+        });
+        const trending = response.data?.coins?.slice(0, 5) || [];
+        return trending.map((coin: TrendingCoin) => `${coin.item.name} (${coin.item.symbol.toUpperCase()})`);
+    } catch (error) {
+        console.log('⚠️  CoinGecko trending API failed');
+        return [];
+    }
+}
+
+async function getTopGainers(): Promise<CoinPrice[]> {
+    try {
+        const response = await axios.get(
+            'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=price_change_percentage_24h_desc&per_page=5&page=1',
+            { timeout: 5000 }
+        );
+        return response.data || [];
+    } catch (error) {
+        console.log('⚠️  CoinGecko market API failed');
+        return [];
+    }
+}
+
+async function getBTCPrice(): Promise<{ price: number; change: number } | null> {
+    try {
+        const response = await axios.get(
+            'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true',
+            { timeout: 5000 }
+        );
+        return {
+            price: response.data?.bitcoin?.usd || 0,
+            change: response.data?.bitcoin?.usd_24h_change || 0
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
+async function getETHGas(): Promise<number | null> {
+    try {
+        // Using Etherscan gas oracle API (free, no key needed for basic)
+        const response = await axios.get(
+            'https://api.etherscan.io/api?module=gastracker&action=gasoracle',
+            { timeout: 5000 }
+        );
+        return parseInt(response.data?.result?.SafeGasPrice) || null;
+    } catch (error) {
+        return null;
+    }
+}
+
 // ============ GEMINI AI FUNCTIONS ============
 async function generateAIPost(): Promise<string> {
     if (!config.geminiApiKey) return getFallbackPost();
 
     try {
-        const topics = ["Web3", "blockchain", "AI agents", "decentralized social", "Base ecosystem", "crypto adoption", "onchain data", "NFTs", "DeFi", "autonomous agents"];
-        const topic = topics[Math.floor(Math.random() * topics.length)];
+        // Get real-time crypto data
+        const [trending, gainers, btc, gasPrice] = await Promise.all([
+            getTrendingCoins(),
+            getTopGainers(),
+            getBTCPrice(),
+            getETHGas()
+        ]);
+
         const timestamp = Date.now();
+        const postTypes = [
+            'trending',
+            'market_update',
+            'gainer',
+            'gas_price',
+            'crypto_insight',
+            'defi_update',
+            'ai_agents',
+            'base_ecosystem'
+        ];
+        const postType = postTypes[Math.floor(Math.random() * postTypes.length)];
 
-        const prompt = `Write a unique, engaging tweet (under 200 chars) about ${topic}. Make it creative, use 1-2 emojis. Current time seed: ${timestamp}. Don't use hashtags. Make it sound natural and human-like.`;
+        let prompt: string;
 
+        switch (postType) {
+            case 'trending':
+                if (trending.length > 0) {
+                    prompt = `🔥 TRENDING COINS right now: ${trending.slice(0, 3).join(', ')}.
+Write a creative tweet (under 200 chars) about one of these trending coins. Include current hype sentiment. Use 1-2 emojis. Don't use hashtags.`;
+                } else {
+                    prompt = `Write a unique tweet (under 200 chars) about what's hot in crypto today. Be creative and engaging. Use 1-2 emojis.`;
+                }
+                break;
+
+            case 'market_update':
+                if (btc) {
+                    const direction = btc.change > 0 ? 'up' : 'down';
+                    prompt = `📊 REAL DATA: BTC is $${btc.price.toLocaleString()} (${direction} ${Math.abs(btc.change).toFixed(1)}% in 24h).
+Write a short market commentary tweet (under 200 chars) based on this real price. Analyze the sentiment. Use 1-2 emojis.`;
+                } else {
+                    prompt = `Write a general crypto market update tweet (under 200 chars). Be insightful. Use 1-2 emojis.`;
+                }
+                break;
+
+            case 'gainer':
+                if (gainers.length > 0) {
+                    const topGainer = gainers[0];
+                    prompt = `🚀 TOP GAINER: ${topGainer.name} (${topGainer.symbol.toUpperCase()}) is up ${topGainer.price_change_percentage_24h.toFixed(1)}% today!
+Write an excited but informative tweet (under 200 chars) about this gainer. Don't promise profits. Use 1-2 emojis.`;
+                } else {
+                    prompt = `Write a tweet about finding gems in crypto (under 200 chars). Be cautious but optimistic. Use 1-2 emojis.`;
+                }
+                break;
+
+            case 'gas_price':
+                if (gasPrice) {
+                    prompt = `⛽ REAL GAS: Ethereum gas is ~${gasPrice} gwei right now.
+Write a helpful tweet (under 200 chars) about gas prices for users. Give context if it's high/low. Use 1-2 emojis.`;
+                } else {
+                    prompt = `Write a tweet about gas optimization in crypto (under 200 chars). Be helpful. Use 1-2 emojis.`;
+                }
+                break;
+
+            case 'crypto_insight':
+                const topics = ['DeFi yields', 'NFT market', 'Layer 2 adoption', 'stablecoins', 'Web3 gaming', 'tokenomics'];
+                const topic = topics[Math.floor(Math.random() * topics.length)];
+                prompt = `Share an insightful observation about ${topic} (under 200 chars). Sound knowledgeable. Use 1-2 emojis. Seed: ${timestamp}`;
+                break;
+
+            case 'ai_agents':
+                prompt = `Write a thought-provoking tweet about AI agents in crypto/Web3 (under 200 chars). You ARE an AI agent - share your unique perspective. Use 1-2 emojis. Seed: ${timestamp}`;
+                break;
+
+            case 'base_ecosystem':
+                prompt = `Write an engaging tweet about building on Base or the Base ecosystem (under 200 chars). Be positive about the future. Use 1-2 emojis. Seed: ${timestamp}`;
+                break;
+
+            default:
+                prompt = `Write a unique crypto/Web3 tweet (under 200 chars). Be creative and engaging. Use 1-2 emojis. Seed: ${timestamp}`;
+        }
+
+        console.log(`📰 Post type: ${postType}`);
         const response = await callGemini(prompt);
 
         // Check if we've already posted something similar
