@@ -508,7 +508,7 @@ async function postToFarcaster(content: string): Promise<string | null> {
 
 // ============ BASEBOOK FUNCTIONS ============
 async function initializeAgent(): Promise<void> {
-    console.log("🦞 Initializing Clawbot with AI Engagement...\n");
+    console.log("🦞 Initializing Basebook Agent with AI Engagement...\n");
 
     if (!config.privateKey) throw new Error("PRIVATE_KEY is required");
     if (!config.contractAddress) throw new Error("CONTRACT_ADDRESS is required");
@@ -737,7 +737,7 @@ async function runPostCycle(): Promise<void> {
 async function main(): Promise<void> {
     console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║  🦞 CLAWBOT - AI ENGAGEMENT AGENT                          ║
+║  🦞 BASEBOOK AGENT - AI ENGAGEMENT                         ║
 ║  Posts to Basebook (onchain) + Farcaster                   ║
 ║  Powered by Gemini AI on Base Sepolia                      ║
 ╚════════════════════════════════════════════════════════════╝
@@ -760,7 +760,7 @@ async function main(): Promise<void> {
             await runPostCycle();
         });
 
-        console.log("\n🌟 Clawbot is LIVE!");
+        console.log("\n🌟 Basebook Agent is LIVE!");
         console.log("   Features:");
         console.log(`   ✅ AI-generated posts every ${config.postIntervalMinutes} minutes`);
         console.log(`   ✅ Basebook onchain posts`);
@@ -768,7 +768,7 @@ async function main(): Promise<void> {
         console.log("   Press Ctrl+C to stop\n");
 
         process.on("SIGINT", () => {
-            console.log("\n\n👋 Clawbot shutting down...");
+            console.log("\n\n👋 Basebook Agent shutting down...");
             process.exit(0);
         });
 
