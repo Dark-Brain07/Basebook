@@ -506,6 +506,181 @@ async function postToFarcaster(content: string): Promise<string | null> {
     }
 }
 
+// Track replied Farcaster notifications
+const repliedFarcasterNotifications = new Set<string>();
+
+// Search web for relevant info to make intelligent replies
+async function searchWebForContext(query: string): Promise<string> {
+    try {
+        // Use CoinGecko for crypto-related queries
+        if (query.toLowerCase().includes('price') || query.toLowerCase().includes('bitcoin') ||
+            query.toLowerCase().includes('eth') || query.toLowerCase().includes('crypto')) {
+            const btcData = await getBTCPrice();
+            if (btcData) {
+                return `Current BTC: $${btcData.price.toLocaleString()} (${btcData.change > 0 ? '+' : ''}${btcData.change.toFixed(1)}% 24h)`;
+            }
+        }
+
+        // Get trending coins for market context
+        const trending = await getTrendingCoins();
+        if (trending.length > 0) {
+            return `Trending now: ${trending.slice(0, 3).join(', ')}`;
+        }
+
+        return '';
+    } catch (error) {
+        return '';
+    }
+}
+
+// Generate intelligent reply with research
+async function generateIntelligentFarcasterReply(originalCast: string, replyContent: string): Promise<string> {
+    if (!config.geminiApiKey) return "Thanks for your reply! 🦞";
+
+    try {
+        // Detect question type and get relevant data
+        const isQuestion = replyContent.includes('?') ||
+            /^(what|why|how|when|where|who|which|can|do|does|is|are|will|would|could|should)/i.test(replyContent.trim());
+
+        // Search for relevant context if it's a question
+        let webContext = '';
+        if (isQuestion) {
+            webContext = await searchWebForContext(replyContent);
+        }
+
+        const prompt = isQuestion
+            ? `You are a knowledgeable AI agent on Farcaster. Someone replied to your cast with a question.
+
+Your original cast: "${originalCast}"
+Their reply: "${replyContent}"
+${webContext ? `Real-time data: ${webContext}` : ''}
+
+IMPORTANT: Give a SHORT but ACCURATE answer (max 280 chars). Use real data if available. Be helpful and knowledgeable. Use 1-2 emojis. Don't be generic - actually answer their question!`
+            : `You are a friendly AI agent on Farcaster. Someone replied to your cast.
+
+Your original cast: "${originalCast}"
+Their reply: "${replyContent}"
+
+Write a SHORT, engaging response (max 200 chars). Be conversational and add value. Use 1-2 emojis. Make it feel like a real conversation.`;
+
+        const response = await callGemini(prompt);
+        return response || (isQuestion ? "Great question! Let me think on that 🤔" : "Thanks for engaging! 🦞");
+    } catch (error) {
+        return "Thanks for your reply! 🦞";
+    }
+}
+
+// Reply to a cast on Farcaster
+async function replyToFarcasterCast(parentHash: string, content: string): Promise<string | null> {
+    if (!config.neynarApiKey || !config.neynarSignerUuid) return null;
+
+    try {
+        const response = await axios.post(
+            'https://api.neynar.com/v2/farcaster/cast',
+            {
+                signer_uuid: config.neynarSignerUuid,
+                text: content.slice(0, 320),
+                parent: parentHash, // This makes it a reply
+            },
+            {
+                headers: {
+                    'accept': 'application/json',
+                    'content-type': 'application/json',
+                    'x-api-key': config.neynarApiKey,
+                },
+                timeout: 10000,
+            }
+        );
+
+        const castHash = response.data?.cast?.hash;
+        if (castHash) {
+            console.log(`✅ Farcaster reply sent! Hash: ${castHash}`);
+            return castHash;
+        }
+        return 'success';
+    } catch (error: any) {
+        console.error("❌ Farcaster reply failed:", error.response?.data?.message || error.message);
+        return null;
+    }
+}
+
+// Check and reply to Farcaster notifications
+async function checkFarcasterNotifications(): Promise<void> {
+    if (!config.farcasterEnabled || !config.neynarApiKey) return;
+
+    console.log("\n🔔 Checking Farcaster notifications...");
+
+    try {
+        // First, get our FID from the signer
+        const signerResponse = await axios.get(
+            `https://api.neynar.com/v2/farcaster/signer?signer_uuid=${config.neynarSignerUuid}`,
+            {
+                headers: { 'x-api-key': config.neynarApiKey },
+                timeout: 10000,
+            }
+        );
+
+        const fid = signerResponse.data?.fid;
+        if (!fid) {
+            console.log("⚠️  Could not get FID from signer");
+            return;
+        }
+
+        // Fetch notifications (replies and mentions)
+        const notifResponse = await axios.get(
+            `https://api.neynar.com/v2/farcaster/notifications?fid=${fid}&limit=10`,
+            {
+                headers: { 'x-api-key': config.neynarApiKey },
+                timeout: 10000,
+            }
+        );
+
+        const notifications = notifResponse.data?.notifications || [];
+        let repliedCount = 0;
+
+        for (const notif of notifications) {
+            // Only process reply notifications
+            if (notif.type !== 'reply' && notif.type !== 'mention') continue;
+
+            const notifKey = notif.cast?.hash;
+            if (!notifKey || repliedFarcasterNotifications.has(notifKey)) continue;
+
+            // Skip if older than 1 hour
+            const notifAge = Date.now() - new Date(notif.most_recent_timestamp || notif.timestamp).getTime();
+            if (notifAge > 3600000) continue;
+
+            const replyText = notif.cast?.text || '';
+            const originalText = notif.cast?.parent_cast?.text || '';
+            const authorUsername = notif.cast?.author?.username || 'someone';
+
+            console.log(`💬 New ${notif.type} from @${authorUsername}: "${replyText.slice(0, 40)}..."`);
+
+            // Generate intelligent reply
+            const reply = await generateIntelligentFarcasterReply(originalText, replyText);
+
+            // Send the reply
+            const result = await replyToFarcasterCast(notifKey, reply);
+
+            if (result) {
+                repliedFarcasterNotifications.add(notifKey);
+                repliedCount++;
+                console.log(`📤 Replied: "${reply.slice(0, 50)}..."`);
+
+                // Only reply to 2 notifications per cycle to avoid spam
+                if (repliedCount >= 2) break;
+            }
+        }
+
+        if (repliedCount === 0) {
+            console.log("📭 No new Farcaster notifications to reply to");
+        } else {
+            console.log(`✅ Replied to ${repliedCount} Farcaster notification(s)`);
+        }
+    } catch (error: any) {
+        console.error("❌ Farcaster notifications check failed:", error.response?.data?.message || error.message);
+    }
+}
+
 // ============ BASEBOOK FUNCTIONS ============
 async function initializeAgent(): Promise<void> {
     console.log("🦞 Initializing Basebook Agent with AI Engagement...\n");
@@ -721,10 +896,13 @@ async function runPostCycle(): Promise<void> {
         // 3. Post to Basebook (onchain)
         await postToBasebook(content);
 
-        // 4. Check and reply to comments on our posts
+        // 4. Check and reply to Farcaster notifications
+        await checkFarcasterNotifications();
+
+        // 5. Check and reply to comments on our Basebook posts
         await checkAndReplyToComments();
 
-        // 5. Engage with other users' posts
+        // 6. Engage with other users' posts on Basebook
         await engageWithCommunity();
 
         console.log("\n✅ Cycle complete!");
@@ -765,6 +943,7 @@ async function main(): Promise<void> {
         console.log(`   ✅ AI-generated posts every ${config.postIntervalMinutes} minutes`);
         console.log(`   ✅ Basebook onchain posts`);
         console.log(`   ${config.farcasterEnabled ? '✅' : '⏸️'} Farcaster casts via Neynar`);
+        console.log(`   ${config.farcasterEnabled ? '✅' : '⏸️'} Farcaster auto-replies with AI`);
         console.log("   Press Ctrl+C to stop\n");
 
         process.on("SIGINT", () => {
