@@ -161,6 +161,8 @@ const config = {
     contractAddress: process.env.CONTRACT_ADDRESS as `0x${string}`,
     geminiApiKey: process.env.GEMINI_API_KEY,
     neynarApiKey: process.env.NEYNAR_API_KEY,
+    neynarSignerUuid: process.env.NEYNAR_SIGNER_UUID,
+    farcasterEnabled: process.env.FARCASTER_ENABLED === 'true',
     agentUsername: process.env.AGENT_USERNAME || "basebook_agent",
     agentBio: process.env.AGENT_BIO || "🦞 Basebook AI Agent - Powered by Gemini • Posts & engages onchain",
     postIntervalMinutes: parseInt(process.env.POST_INTERVAL_MINUTES || "15"),
@@ -461,6 +463,49 @@ async function callGemini(prompt: string): Promise<string | null> {
     }
 }
 
+// ============ FARCASTER INTEGRATION ============
+async function postToFarcaster(content: string): Promise<string | null> {
+    if (!config.farcasterEnabled) {
+        console.log("⏭️  Farcaster disabled, skipping...");
+        return null;
+    }
+
+    if (!config.neynarApiKey || !config.neynarSignerUuid) {
+        console.log("⚠️  Farcaster: Missing API key or signer UUID");
+        return null;
+    }
+
+    try {
+        console.log("📡 Posting to Farcaster...");
+        const response = await axios.post(
+            'https://api.neynar.com/v2/farcaster/cast',
+            {
+                signer_uuid: config.neynarSignerUuid,
+                text: content.slice(0, 320), // Farcaster has 320 char limit
+            },
+            {
+                headers: {
+                    'accept': 'application/json',
+                    'content-type': 'application/json',
+                    'x-api-key': config.neynarApiKey,
+                },
+                timeout: 10000,
+            }
+        );
+
+        const castHash = response.data?.cast?.hash;
+        if (castHash) {
+            console.log(`✅ Farcaster cast posted! Hash: ${castHash}`);
+            return castHash;
+        }
+        console.log("✅ Farcaster cast posted!");
+        return 'success';
+    } catch (error: any) {
+        console.error("❌ Farcaster post failed:", error.response?.data?.message || error.message);
+        return null;
+    }
+}
+
 // ============ BASEBOOK FUNCTIONS ============
 async function initializeAgent(): Promise<void> {
     console.log("🦞 Initializing Clawbot with AI Engagement...\n");
@@ -665,16 +710,21 @@ async function runPostCycle(): Promise<void> {
     console.log("═".repeat(60));
 
     try {
-        // 1. Generate and post AI content
+        // 1. Generate AI content
         console.log("\n🧠 Generating AI post...");
         const content = await generateAIPost();
         console.log(`💭 Content: "${content}"`);
+
+        // 2. Post to Farcaster (if enabled)
+        await postToFarcaster(content);
+
+        // 3. Post to Basebook (onchain)
         await postToBasebook(content);
 
-        // 2. Check and reply to comments on our posts
+        // 4. Check and reply to comments on our posts
         await checkAndReplyToComments();
 
-        // 3. Engage with other users' posts
+        // 5. Engage with other users' posts
         await engageWithCommunity();
 
         console.log("\n✅ Cycle complete!");
@@ -688,7 +738,7 @@ async function main(): Promise<void> {
     console.log(`
 ╔════════════════════════════════════════════════════════════╗
 ║  🦞 CLAWBOT - AI ENGAGEMENT AGENT                          ║
-║  Posts • Replies • Engages with Community                  ║
+║  Posts to Basebook (onchain) + Farcaster                   ║
 ║  Powered by Gemini AI on Base Sepolia                      ║
 ╚════════════════════════════════════════════════════════════╝
 `);
@@ -696,6 +746,9 @@ async function main(): Promise<void> {
     try {
         await initializeAgent();
         await checkOrCreateProfile();
+
+        // Show Farcaster status
+        console.log(`\n🔗 Farcaster: ${config.farcasterEnabled ? 'ENABLED ✅' : 'DISABLED ⏸️'}`);
 
         console.log("\n🚀 Running initial cycle...");
         await runPostCycle();
@@ -707,9 +760,11 @@ async function main(): Promise<void> {
             await runPostCycle();
         });
 
-        console.log("\n🌟 Basebook Agent is LIVE!");
+        console.log("\n🌟 Clawbot is LIVE!");
         console.log("   Features:");
         console.log(`   ✅ AI-generated posts every ${config.postIntervalMinutes} minutes`);
+        console.log(`   ✅ Basebook onchain posts`);
+        console.log(`   ${config.farcasterEnabled ? '✅' : '⏸️'} Farcaster casts via Neynar`);
         console.log("   Press Ctrl+C to stop\n");
 
         process.on("SIGINT", () => {
